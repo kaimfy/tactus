@@ -33,9 +33,11 @@ Order matters here: undo first, because every later feature adds edit operations
 2. ✅ **Effects**: parametric EQ, compressor, limiter, reverb, delay, distortion, chorus,
    flanger, phaser, stereo imager, noise gate, filter — real DSP, bypass, ordering, factory
    presets, effect-chain presets.
-3. **Sampler** (ADSR, loop, reverse, slicing, multi-sample) and **drum sampler** with pads.  ← next
-4. **Synth upgrade**: second oscillator, sub, noise, LFO, unison, portamento; preset library.
-5. **Content browser**: search, favourites, user folders, audio preview (SQLite index).
+3. ✅ **Sampler** (ADSR, loop, reverse, slicing, multi-sample zones) and **drum kit** with pads.
+   (Open: velocity layers, choke groups, marker dragging, slice-to-pattern.)
+4. ✅ **Synth upgrade**: second oscillator, sub, noise, filter envelope, LFO, unison, glide,
+   mono legato; 20 built-in presets and user preset files; full-width instrument view.
+5. **Content browser**: search, favourites, user folders, audio preview (SQLite index).  ← next
 
 ## Phase 4 — Advanced production
 

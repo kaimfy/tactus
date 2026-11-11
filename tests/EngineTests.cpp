@@ -56,6 +56,7 @@ TEST (default_project_makes_sound_and_stops_cleanly)
 
 TEST (every_instrument_kind_produces_sound)
 {
+    // (The two sampler kinds need a sample to make sound: see SamplerTests.cpp.)
     for (auto kind : { InstrumentKind::synth, InstrumentKind::kick, InstrumentKind::snare,
                        InstrumentKind::hiHat, InstrumentKind::clap })
     {

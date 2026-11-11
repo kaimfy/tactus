@@ -471,6 +471,28 @@ int Project::sliceSampleZone (Id channel, Id zone, std::vector<double> cuts, dou
     return (int) pieces.size();
 }
 
+bool Project::spreadSampleZones (Id channel)
+{
+    auto* c = findChannel (channel);
+    if (c == nullptr || c->sampler.zones.empty())
+        return false;
+
+    std::vector<int> roots;
+    for (const auto& z : c->sampler.zones)
+        roots.push_back (z.rootKey);
+    std::sort (roots.begin(), roots.end());
+    roots.erase (std::unique (roots.begin(), roots.end()), roots.end());
+
+    for (auto& z : c->sampler.zones)
+    {
+        const auto i = (std::size_t) (std::lower_bound (roots.begin(), roots.end(), z.rootKey) - roots.begin());
+        // The border between two neighbouring roots lies halfway between them.
+        z.lowKey = i == 0 ? 0 : (roots[i - 1] + roots[i]) / 2 + 1;
+        z.highKey = i + 1 == roots.size() ? 127 : (roots[i] + roots[i + 1]) / 2;
+    }
+    return true;
+}
+
 int Project::firstFreeSampleKey (Id channel, int from) const
 {
     const auto* c = findChannel (channel);

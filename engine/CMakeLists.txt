@@ -4,14 +4,17 @@
 add_library(tactus_engine STATIC
     src/model/Project.cpp
     src/model/EffectInfo.cpp
+    src/model/SynthPresets.cpp
     src/model/ProjectSerializer.cpp
     src/model/UndoHistory.cpp
     src/model/Editing.cpp
     src/model/ProjectFiles.cpp
     src/engine/AudioPool.cpp
     src/engine/Recorder.cpp
+    src/engine/SampleSlicer.cpp
     src/dsp/PolySynth.cpp
     src/dsp/DrumSynth.cpp
+    src/dsp/Sampler.cpp
     src/dsp/Effects.cpp
     src/engine/Snapshot.cpp
     src/engine/AudioEngine.cpp

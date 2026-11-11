@@ -10,7 +10,7 @@ namespace
     constexpr int kMenuHeight = 24;
     constexpr int kTransportHeight = 52;
     constexpr int kStatusHeight = 22;
-    constexpr int kInstrumentPanelWidth = 230;
+    constexpr int kInstrumentPanelWidth = 288; // one column of the synth editor plus its scroll bar
     constexpr const char* kProjectWildcard = "*.tactus";
     constexpr juce::uint32 kAutosaveIntervalMs = 20000;
 }
@@ -32,14 +32,16 @@ MainComponent::MainComponent (juce::ApplicationProperties& s) : settings (s)
     addAndMakeVisible (pianoRoll);
     addAndMakeVisible (instrumentPanel);
     addChildComponent (arrangement);
+    addChildComponent (instrumentView);
     addChildComponent (mixerView);
     mixerView.onMessage = [this] (const juce::String& message) { setStatus (message); };
 
     // View tabs, on the right of the menu row.
     pianoRollTab.setTooltip ("Edit the notes of the selected channel (F2)");
     arrangementTab.setTooltip ("Arrange patterns into a song (F3)");
+    instrumentTab.setTooltip ("The selected channel's instrument, with all its controls side by side (F4)");
     mixerTab.setTooltip ("Mix: volumes, routing and effects (F9)");
-    for (auto* tab : { &pianoRollTab, &arrangementTab, &mixerTab })
+    for (auto* tab : { &pianoRollTab, &arrangementTab, &instrumentTab, &mixerTab })
     {
         tab->setWantsKeyboardFocus (false);
         tab->setColour (juce::TextButton::buttonOnColourId, palette().accentAlt.withAlpha (0.7f));
@@ -48,6 +50,7 @@ MainComponent::MainComponent (juce::ApplicationProperties& s) : settings (s)
     }
     pianoRollTab.onClick = [this] { showLowerView (LowerView::pianoRoll); };
     arrangementTab.onClick = [this] { showLowerView (LowerView::arrangement); };
+    instrumentTab.onClick = [this] { showLowerView (LowerView::instrument); };
     mixerTab.onClick = [this] { showLowerView (LowerView::mixer); };
     pianoRollTab.setToggleState (true, juce::dontSendNotification);
 
@@ -269,16 +272,21 @@ void MainComponent::openProject()
             if (file == juce::File())
                 return; // cancelled
             settings.getUserSettings()->setValue ("lastFolder", file.getParentDirectory().getFullPathName());
-            const auto error = session.loadFrom (file);
-            if (error.isNotEmpty())
-            {
-                showError ("Could not open " + file.getFileName(), error);
-                return;
-            }
-            setStatus ("Opened " + file.getFullPathName());
-            warnAboutMissingAudio();
+            openFile (file);
         });
     });
+}
+
+void MainComponent::openFile (const juce::File& file)
+{
+    const auto error = session.loadFrom (file);
+    if (error.isNotEmpty())
+    {
+        showError ("Could not open " + file.getFileName(), error);
+        return;
+    }
+    setStatus ("Opened " + file.getFullPathName());
+    warnAboutMissingAudio();
 }
 
 void MainComponent::save (std::function<void()> afterwards)
@@ -338,7 +346,7 @@ void MainComponent::warnAboutMissingAudio()
                juce::String (missing.size())
                    + (missing.size() == 1 ? " audio file the project uses could not be loaded:\n\n" : " audio files the project uses could not be loaded:\n\n")
                    + missing.joinIntoString ("\n")
-                   + "\n\nTheir clips are shown in red and stay silent. Files that are missing are also looked for beside the project file.");
+                   + "\n\nThe clips and sampler pads that use them are shown in red and stay silent. Files that are missing are also looked for beside the project file.");
 }
 
 //==============================================================================
@@ -597,7 +605,9 @@ void MainComponent::showLowerView (LowerView view)
     lowerView = view;
     pianoRollTab.setToggleState (view == LowerView::pianoRoll, juce::dontSendNotification);
     arrangementTab.setToggleState (view == LowerView::arrangement, juce::dontSendNotification);
+    instrumentTab.setToggleState (view == LowerView::instrument, juce::dontSendNotification);
     mixerTab.setToggleState (view == LowerView::mixer, juce::dontSendNotification);
+    instrumentView.setVisible (view == LowerView::instrument);
     pianoRoll.setVisible (view == LowerView::pianoRoll);
     instrumentPanel.setVisible (view == LowerView::pianoRoll);
     arrangement.setVisible (view == LowerView::arrangement);
@@ -626,7 +636,7 @@ void MainComponent::showAbout()
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
     ids.addArray ({ cmdNew, cmdOpen, cmdSave, cmdSaveAs, cmdAudioSettings, cmdQuit, cmdPlayStop, cmdAbout,
-                    cmdUndo, cmdRedo, cmdShowPianoRoll, cmdShowArrangement, cmdShowMixer, cmdToggleSongMode, cmdImportAudio,
+                    cmdUndo, cmdRedo, cmdShowPianoRoll, cmdShowArrangement, cmdShowInstrument, cmdShowMixer, cmdToggleSongMode, cmdImportAudio,
                     cmdRecord, cmdToggleMonitor, cmdCollectAudio });
 }
 
@@ -703,6 +713,11 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
             info.setTicked (lowerView == LowerView::arrangement);
             info.addDefaultKeypress (juce::KeyPress::F3Key, 0);
             break;
+        case cmdShowInstrument:
+            info.setInfo ("Instrument", "Show the selected channel's instrument", "View", 0);
+            info.setTicked (lowerView == LowerView::instrument);
+            info.addDefaultKeypress (juce::KeyPress::F4Key, 0);
+            break;
         case cmdShowMixer:
             info.setInfo ("Mixer", "Show the mixer", "View", 0);
             info.setTicked (lowerView == LowerView::mixer);
@@ -738,6 +753,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdRedo:          session.redo(); return true;
         case cmdShowPianoRoll:   showLowerView (LowerView::pianoRoll); return true;
         case cmdShowArrangement: showLowerView (LowerView::arrangement); return true;
+        case cmdShowInstrument:  showLowerView (LowerView::instrument); return true;
         case cmdShowMixer:       showLowerView (LowerView::mixer); return true;
         case cmdToggleSongMode:
             session.setPlayMode (session.playMode() == PlayMode::song ? PlayMode::pattern : PlayMode::song);
@@ -775,6 +791,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 2:
             menu.addCommandItem (&commandManager, cmdShowPianoRoll);
             menu.addCommandItem (&commandManager, cmdShowArrangement);
+            menu.addCommandItem (&commandManager, cmdShowInstrument);
             menu.addCommandItem (&commandManager, cmdShowMixer);
             break;
         case 3:
@@ -819,6 +836,7 @@ void MainComponent::resized()
     auto area = getLocalBounds();
     auto menuRow = area.removeFromTop (kMenuHeight);
     mixerTab.setBounds (menuRow.removeFromRight (70).reduced (2, 2));
+    instrumentTab.setBounds (menuRow.removeFromRight (96).reduced (2, 2));
     arrangementTab.setBounds (menuRow.removeFromRight (104).reduced (2, 2));
     pianoRollTab.setBounds (menuRow.removeFromRight (92).reduced (2, 2));
     menuBar.setBounds (menuRow);
@@ -844,6 +862,7 @@ void MainComponent::resized()
     auto lowerArea = lower.getBounds();
     arrangement.setBounds (lowerArea);
     mixerView.setBounds (lowerArea);
+    instrumentView.setBounds (lowerArea);
     instrumentPanel.setBounds (lowerArea.removeFromRight (juce::jmin (kInstrumentPanelWidth, lowerArea.getWidth() / 3)));
     pianoRoll.setBounds (lowerArea);
 }

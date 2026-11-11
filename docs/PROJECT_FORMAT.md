@@ -1,13 +1,14 @@
 # The `.tactus` project format
 
-Version 3. Older files still open: version 1 files (no `arrangement`) get eight empty tracks,
+Version 5 (version 4 plus the larger synth). Older files still open: a synth saved before
+version 5 loads with everything new switched off and sounds as it did; version 1 files (no `arrangement`) get eight empty tracks,
 and files before version 3 (no `mixer`) get a master with everything routed to it. A project is one UTF-8 JSON file. (From Phase 2 a project becomes a folder holding
 this file plus its audio; the JSON keeps this shape.)
 
 ```json
 {
   "format": "tactus-project",
-  "version": 3,
+  "version": 5,
   "name": "My song",
   "tempo": 124.0,
   "timeSigNumerator": 4,
@@ -54,9 +55,9 @@ this file plus its audio; the JSON keeps this shape.)
 | `version` | Format version. A file with a higher version than the program knows is rejected with a clear message, never half-loaded. |
 | `tempo` | Beats per minute, 20–400. |
 | `nextId` | Next free id. On load it is raised above every id in the file. |
-| `channels[].kind` | `synth`, `kick`, `snare`, `hihat`, `clap`. Unknown kinds are an error. |
+| `channels[].kind` | `synth`, `kick`, `snare`, `hihat`, `clap`, `sampler`, `drumsampler`. Unknown kinds are an error. |
 | `channels[].volume` | Linear gain 0–1. `pan` is −1 (left) to +1 (right). |
-| `synth.waveform` | 0 saw, 1 square, 2 triangle, 3 sine. |
+| `synth` | The synth's settings; the full list is under [Synth](#synth). The example shows only the oldest fields. |
 | `patterns[].lengthSteps` | Length in sixteenth notes. |
 | `patterns[].swing` | 0–1: delays every second sixteenth by up to half a step. |
 | `tracks[].notes[]` | `[startTick, lengthTicks, key, velocity]`. 960 ticks per quarter note; key is a MIDI note number (60 = C4); velocity 0–1. |
@@ -80,6 +81,58 @@ this file plus its audio; the JSON keeps this shape.)
 A clip that names a missing pattern, track or `audioFiles` entry rejects the file. An audio
 *file* that is missing from disk does not: the project opens, the clip is shown as missing,
 and the file is also looked for beside the project file and in an `audio` folder next to it.
+
+### Synth
+
+Channels of kind `synth` carry a `synth` object. A field that is missing takes its default.
+
+| Field | Meaning | Default |
+|---|---|---|
+| `waveform`, `waveform2` | Oscillator 1 and 2: 0 saw, 1 square, 2 triangle, 3 sine. | 0 |
+| `osc1Level`, `osc2Level` | Oscillator levels, 0–1. | 1, 0 |
+| `osc2Semitones`, `osc2Detune` | Oscillator 2 against oscillator 1: semitones −24 to +24, cents −100 to +100. | 0 |
+| `subLevel`, `noiseLevel` | A sine one octave below oscillator 1, and white noise, 0–1. | 0 |
+| `unison` | Detuned copies of both oscillators per note, 1–7 (1 = off). | 1 |
+| `unisonDetune`, `unisonWidth` | Cents from the centre to the outermost copy, 0–100; stereo spread, 0–1. | 20, 0.7 |
+| `glide` | Seconds to slide from the previous note's pitch, 0–2 (0 = off). | 0 |
+| `mono` | One voice; overlapping notes slide into each other without a new attack. | false |
+| `cutoffHz`, `resonance` | Low-pass filter: 40–18000 Hz, 0–1. | 2400, 0.25 |
+| `filterEnvAmount` | Octaves the filter envelope opens the cutoff (negative closes it), −6 to +6. | 0 |
+| `filterAttack` … `filterRelease` | Filter envelope: times in seconds, `filterSustain` 0–1. | 0.002, 0.25, 0, 0.2 |
+| `attack` … `release` | Amplitude envelope: times in seconds, `sustain` 0–1. | 0.004, 0.18, 0.55, 0.16 |
+| `lfoShape` | 0 sine, 1 triangle, 2 square, 3 saw down, 4 random (a new value each cycle). | 0 |
+| `lfoRate` | Hz, 0.05–30. | 5 |
+| `lfoPitch`, `lfoCutoff`, `lfoAmp` | LFO depth: vibrato in semitones 0–12, filter sweep in octaves 0–4, tremolo 0–1. | 0 |
+
+Synth presets (`.tactussynth`) hold `{ "format": "tactus-synth-preset", "version": 1, "name": "...", "synth": { ... } }`
+with the synth in the same form.
+
+### Samplers
+
+Channels of kind `sampler` and `drumsampler` carry a `sampler` object (the two kinds are
+stored identically; a drum kit's zones each cover one key):
+
+```json
+"sampler": {
+  "attack": 0.0, "decay": 0.2, "sustain": 1.0, "release": 0.05, "oneShot": true,
+  "zones": [
+    { "id": 31, "audio": 16, "rootKey": 60, "lowKey": 0, "highKey": 127,
+      "start": 0.0, "end": 0.0, "loop": false, "loopStart": 0.0, "reverse": false,
+      "gain": 1.0, "pan": 0.0, "tune": 0.0 }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `attack` … `release` | Envelope: times in seconds, `sustain` 0–1. |
+| `oneShot` | `true`: a note plays its sample to the end whatever its length. `false`: the note's length gates it. Looping zones always follow the note. |
+| `zones[].audio` | Id of an entry in `audioFiles`. An unknown id rejects the file; a file missing from disk only silences the zone. |
+| `rootKey` | Key at which the sample plays at its recorded pitch. |
+| `lowKey`, `highKey` | The zone sounds for keys in this range. Zones may overlap; they then layer. |
+| `start`, `end` | Seconds into the file. `end` ≤ `start` means the end of the file. |
+| `loop`, `loopStart` | Repeat `loopStart` … `end` while the note is held. With `reverse`, the same distance is measured back from the end. |
+| `gain`, `pan`, `tune` | Linear gain 0–4, balance −1 to +1, semitones −48 to +48. |
 
 ### Mixer
 

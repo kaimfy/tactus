@@ -1,8 +1,8 @@
 # Status
 
-Last updated: 2026-11-10 — Phase 3, milestone 3.1 (mixer and effects) done. Phase 2 is functionally
-complete; its remaining items are listed below and carried forward.
-Build: Windows 10, MSVC 14.51 (VS 2026), JUCE 9.0.5, Release. Tests: 97 of 97 pass.
+Last updated: 2026-11-11 — Phase 3: mixer, effects, sampler, drum kit and the synth upgrade done.
+Phase 2 is functionally complete; its remaining items are listed below and carried forward.
+Build: Windows 10, MSVC 14.51 (VS 2026), JUCE 9.0.5, Release. Tests: 122 of 122 pass.
 
 "Works" below means: implemented in the engine, reachable in the application, and checked —
 by an automated test, by driving the running application, or both (stated per line).
@@ -20,6 +20,11 @@ by an automated test, by driving the running application, or both (stated per li
 | Multiple patterns: new, duplicate, rename, delete, switch | Model tests; menu not exercised in the running app |
 | Piano roll: add, move, resize, delete, audition, snap, scroll, zoom, auto-scroll to notes | Ran the app (add / move / delete / auto-scroll); resize, zoom and keyboard audition not exercised |
 | Polyphonic synth (4 waveforms, resonant low-pass, ADSR, 16 voices) | Tests |
+| **Synth upgrade**: second oscillator (pitch, fine tune), sub oscillator, noise, unison (up to 7 detuned copies, stereo width), filter envelope, LFO (5 shapes) to pitch / cutoff / level, glide, mono legato mode | Tests (each one measured: added partials, detune, loudness and width of unison, glide pitch over time, legato without a new attack, LFO depth, click-free square tremolo, filter envelope) + ran the app (knobs change the sound while playing, each drag is one undo step; Mono button; LFO shape list) |
+| The default synth patch is unchanged, sample for sample; projects saved before the upgrade sound as they did | Tests |
+| **Instrument view** (F4): all controls of the selected channel's instrument side by side, with envelope graphs; the narrow panel beside the piano roll shows the same controls in one column | Ran the app |
+| **Synth presets**: 20 built-in sounds (bass, lead, pad, keys, FX); save / load your own as `.tactussynth` files | Tests (every preset makes sound, round trip, bad files rejected) + ran the app (chose presets and heard them on the meters, saved a preset and loaded it back) |
+| Channel rack shows each channel's kind (SYN / SMP / KIT / DRM) in the colour of its mixer insert | Ran the app |
 | Drum voices: kick, snare, hi-hat, clap | Tests |
 | Channel volume / pan / mute, click-free; add / rename / delete channels | Tests (audio) + ran the app (selection) |
 | Output meters, clip light, CPU load, underrun counter | Ran the app (meters) |
@@ -44,7 +49,7 @@ by an automated test, by driving the running application, or both (stated per li
 | The microphone is opened only while recording or monitoring, and released afterwards | Ran the app (log shows the device reopening without input after the take) |
 | Takes are saved in the project's `audio` folder (or Documents/Tactus/Recordings for an unsaved project) | Ran the app |
 | **Backups**: each save keeps the previous version in `backups/`, newest 10 | Tests; not exercised in the running app |
-| **Autosave and crash recovery**: unsaved work is written aside every 20 s; after a crash the next start offers to recover it | Ran the app (killed the process with unsaved edits, relaunched, recovered them) |
+| **Autosave and crash recovery**: unsaved work is written aside every 20 s; after a crash the next start offers to recover it | Ran the app (killed the process with unsaved edits, relaunched, recovered them — synth settings included; Discard also checked) |
 | **Collect audio into project folder** (File menu): copies used audio beside the project and re-points it | Tests; command not exercised in the running app |
 | **Mixer**: master + inserts, each with fader (to +6 dB), balance, mute, solo, stereo peak meter, name, colour (F9) | Tests (fader, balance, mute, solo, meters) + ran the app (meters while playing) |
 | **Routing**: channels and arrangement tracks play into an insert (right-click menu); inserts output to the master or to a bus to their right; post-fader sends | Tests (routing, sends, rerouting on delete) + ran the app (output menu); right-click routing menus not exercised |
@@ -54,7 +59,18 @@ by an automated test, by driving the running application, or both (stated per li
 | Effect chains: add, reorder, remove, bypass with a 10 ms cross-fade; parameter changes smoothed (no zipper noise) | Tests (order matters, click-free bypass, smoothing) + ran the app (add, bypass, undo); reorder not exercised |
 | Factory presets for every effect; effect-chain presets saved / loaded as `.tactuschain` files | Tests (chain round trip) + ran the app (a preset); chain save / load not exercised |
 | Project format v3 with the mixer; v1 and v2 projects still open | Tests |
-| **Missing audio**: project still opens and plays, clips shown in red, a dialog lists the files; files moved beside the project are found | Tests (lookup, playback without the file); dialog not exercised |
+| **Sampler** channel: plays an audio file (any supported format, mono or stereo) at a pitch set by the key, root key and tuning; 32 voices | Tests (bit-exact playback, pitch, file rate, stereo, voice stealing) + ran the app (loaded a file with Load, played it) |
+| Sampler shaping: start / end, reverse, loop with a seamless cross-fade, gain, pan, ADSR envelope, one-shot or gated by the note length | Tests (each one measured) + ran the app (loop, reverse and gain controls; each is one undo step); start / end, tune, pan and envelope controls not exercised |
+| **Zones**: several samples per sampler, each with a key range and root key; overlapping zones layer; "Spread zones across the keys" and automatic mapping of files named after their notes (multi-sampling) | Tests (key ranges, layering, spreading); adding several files, the key-range controls and name mapping not exercised in the running app |
+| **Drum kit** channel: 16 pads from C4 up, one sample each; click a pad to hear it; the step sequencer plays pad 1, the piano roll plays them all | Tests (pads, empty pad) + ran the app (pads shown, pad selected and auditioned, pattern played with level on the meters, pad menu opened); loading onto a pad and clearing it not exercised |
+| **Slicing**: cut a sample into 2–32 equal slices or at each hit (transient detection); the slices land on consecutive keys | Tests (slice positions, slices replayed in order rebuild the file, detection within 4 ms on a synthetic loop) + ran the app (a four-hit loop sliced at its hits); equal slicing not exercised in the running app |
+| Editing a sampler while it sounds never clicks: voices carry on through changes that do not move them in the file, and are faded when they must stop | Tests |
+| Dropping audio files on the sampler panel or on a pad | Not exercised (written, builds) |
+| Missing sample file: the zone is silent, the rest plays; pad shown in red; listed in the missing-audio dialog | Tests + ran the app |
+| Project format v4 with samplers; v1–v3 projects still open | Tests |
+| Project format v5 with the larger synth; v1–v4 projects still open | Tests |
+| A project file given on the command line is opened at start | Ran the app |
+| **Missing audio**: project still opens and plays, clips shown in red, a dialog lists the files; files moved beside the project are found | Tests (lookup, playback without the file) + ran the app (dialog shown for a missing sample) |
 | Log file | Ran the app |
 
 ## Carried over from Phase 2
@@ -69,7 +85,9 @@ by an automated test, by driving the running application, or both (stated per li
 
 ## Phase 3 — still to do
 
-- Sampler, drum sampler, synth upgrade (second oscillator, sub, noise, LFO, unison, portamento), instrument presets
+- Sampler presets (the synth has them; a sampler's sound can only be saved with its project)
+- Sampler: velocity layers, choke groups (open / closed hi-hat), dragging the start / end / loop
+  markers in the waveform, writing the notes that replay a sliced loop into a pattern
 - Content browser with search, favourites and audio preview
 - User presets for single effects (only factory presets and whole-chain presets exist)
 - Gain-reduction meters on the compressor, limiter and gate
@@ -106,6 +124,22 @@ by an automated test, by driving the running application, or both (stated per li
   the arrangement (no disk streaming). The application says so and gives the file's path.
 - Opening the input restarts the audio device, which causes a brief dropout when recording
   starts and ends.
+- Sampler: a sample played far above its recorded pitch aliases (interpolation only, no
+  band-limiting). Moving a zone's start or end, or reversing it, stops that zone's sounding
+  notes (softly). The loop cross-fade is fixed at 10 ms and needs that much audio before the
+  loop start. Samples are held in memory like audio clips, with the same 12-minute limit.
+- Sampler and synth sound was checked by tests and by the meters in the running application,
+  not by ear. The built-in synth presets in particular have never been listened to.
+- Synth: one LFO per channel, shared by all its notes and not synced to the tempo. Pitch,
+  cutoff and LFO are updated every 32 samples. The triangle wave is not band-limited (saw
+  and square are), so very high triangle notes alias slightly. User presets are opened with Load...; they do not
+  appear in the preset list.
+- On 2026-11-11 the scripted checks could not send Ctrl shortcuts to any program on the test
+  machine, so that day's undo checks went through the Edit menu instead of Ctrl+Z.
+- A drum kit shows 16 pads (C4 to D#5); samples on other keys (after slicing into more than
+  16 pieces) are reached through the sample list and the piano roll.
+- The sampler's file dialog starts in the Music folder each session (the folder is not remembered).
+- With no sample loaded, the greyed-out sample controls show the values of the sample viewed last.
 - Mixer effects are pre-fader and all of them process all the time, even on silent inserts,
   so CPU use grows with the number of effects rather than with what is playing.
 - Sends have no level ramp: moving a send level quickly can click slightly.

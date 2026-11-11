@@ -10,7 +10,9 @@ add_executable(tactus_tests
     RecorderTests.cpp
     ProjectFilesTests.cpp
     EffectTests.cpp
-    MixerTests.cpp)
+    MixerTests.cpp
+    SamplerTests.cpp
+    SynthTests.cpp)
 
 target_link_libraries(tactus_tests PRIVATE tactus_engine tactus_warnings)
 

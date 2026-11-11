@@ -6,36 +6,14 @@ namespace tactus::ui
 namespace
 {
     constexpr int kHeaderHeight = 26;
+    constexpr int kMaxSamplerWidth = 420; // the sampler is one column however wide the view
 }
 
 InstrumentPanel::InstrumentPanel (Session& s) : session (s)
 {
-    waveLabel.setText ("Waveform", juce::dontSendNotification);
-    waveLabel.setColour (juce::Label::textColourId, palette().textDim);
-    waveLabel.setFont (juce::Font (juce::FontOptions (12.0f)));
-    addChildComponent (waveLabel);
-
-    waveBox.addItem ("Saw", 1);
-    waveBox.addItem ("Square", 2);
-    waveBox.addItem ("Triangle", 3);
-    waveBox.addItem ("Sine", 4);
-    waveBox.setWantsKeyboardFocus (false);
-    waveBox.onChange = [this]
-    {
-        if (auto* c = session.selectedChannelOrNull())
-        {
-            c->synth.waveform = (Waveform) juce::jlimit (0, 3, waveBox.getSelectedId() - 1);
-            session.edited ("Change waveform");
-        }
-    };
-    addChildComponent (waveBox);
-
-    addControl (cutoff, "Cutoff", 40.0, 18000.0, 1200.0, " Hz", 0, &SynthParams::cutoffHz);
-    addControl (resonance, "Resonance", 0.0, 1.0, 0.5, "", 2, &SynthParams::resonance);
-    addControl (attack, "Attack", 0.0005, 5.0, 0.15, " s", 3, &SynthParams::attack);
-    addControl (decay, "Decay", 0.001, 5.0, 0.3, " s", 3, &SynthParams::decay);
-    addControl (sustain, "Sustain", 0.0, 1.0, 0.5, "", 2, &SynthParams::sustain);
-    addControl (release, "Release", 0.001, 10.0, 0.4, " s", 3, &SynthParams::release);
+    viewport.setScrollBarsShown (true, false);
+    viewport.setScrollBarThickness (8);
+    addChildComponent (viewport);
 
     session.addChangeListener (this);
     refresh();
@@ -46,75 +24,69 @@ InstrumentPanel::~InstrumentPanel()
     session.removeChangeListener (this);
 }
 
-void InstrumentPanel::addControl (Control& control, const juce::String& name, double low, double high, double midPoint,
-                                  const juce::String& suffix, int decimals, float SynthParams::* member)
-{
-    control.label.setText (name, juce::dontSendNotification);
-    control.label.setColour (juce::Label::textColourId, palette().textDim);
-    control.label.setFont (juce::Font (juce::FontOptions (12.0f)));
-    addChildComponent (control.label);
-
-    auto& slider = control.slider;
-    slider.setSliderStyle (juce::Slider::LinearBar);
-    slider.setRange (low, high);
-    slider.setSkewFactorFromMidPoint (midPoint); // more travel where the ear is more sensitive
-    slider.setNumDecimalPlacesToDisplay (decimals);
-    slider.setTextValueSuffix (suffix);
-    slider.setWantsKeyboardFocus (false);
-    slider.onDragEnd = [this] { session.endGesture(); };
-    slider.onValueChange = [this, &slider, member, name]
-    {
-        if (auto* c = session.selectedChannelOrNull())
-        {
-            c->synth.*member = (float) slider.getValue();
-            session.editedContinuous ("Change " + name.toLowerCase());
-        }
-    };
-    addChildComponent (slider);
-    controls.push_back (&control);
-}
-
 void InstrumentPanel::changeListenerCallback (juce::ChangeBroadcaster*)
 {
-    refresh();
+    if (isVisible()) // the hidden copy catches up when it is shown
+        refresh();
+}
+
+void InstrumentPanel::visibilityChanged()
+{
+    if (isVisible())
+        refresh();
+}
+
+void InstrumentPanel::fitEditor()
+{
+    const int width = juce::jmax (120, viewport.getMaximumVisibleWidth());
+    if (editor == Editor::synth)
+        synth.setSize (width, synth.getHeight());
+    else if (editor == Editor::sampler)
+        sampler.setSize (juce::jmin (kMaxSamplerWidth, width), sampler.getHeight());
 }
 
 void InstrumentPanel::refresh()
 {
     const auto* channel = session.selectedChannelOrNull();
-    showingSynth = channel != nullptr && channel->kind == InstrumentKind::synth;
-
-    waveLabel.setVisible (showingSynth);
-    waveBox.setVisible (showingSynth);
-    for (auto* c : controls)
+    const auto wanted = channel == nullptr                       ? Editor::none
+                        : channel->kind == InstrumentKind::synth ? Editor::synth
+                        : isSampler (channel->kind)              ? Editor::sampler
+                                                                 : Editor::none;
+    if (wanted != editor)
     {
-        c->label.setVisible (showingSynth);
-        c->slider.setVisible (showingSynth);
+        editor = wanted;
+        viewport.setViewedComponent (editor == Editor::synth ? static_cast<juce::Component*> (&synth)
+                                     : editor == Editor::sampler ? static_cast<juce::Component*> (&sampler)
+                                                                 : nullptr,
+                                     false);
+        viewport.setVisible (editor != Editor::none);
     }
 
+    const auto name = channel != nullptr ? juce::String::fromUTF8 (channel->name.c_str()) : juce::String();
+    hint = {};
     if (channel == nullptr)
     {
         heading = "Instrument";
         hint = "No channel selected.";
     }
-    else if (showingSynth)
+    else if (editor == Editor::synth)
     {
-        heading = "Synth  /  " + juce::String::fromUTF8 (channel->name.c_str());
-        hint = {};
-        const auto& s = channel->synth;
-        waveBox.setSelectedId ((int) s.waveform + 1, juce::dontSendNotification);
-        cutoff.slider.setValue (s.cutoffHz, juce::dontSendNotification);
-        resonance.slider.setValue (s.resonance, juce::dontSendNotification);
-        attack.slider.setValue (s.attack, juce::dontSendNotification);
-        decay.slider.setValue (s.decay, juce::dontSendNotification);
-        sustain.slider.setValue (s.sustain, juce::dontSendNotification);
-        release.slider.setValue (s.release, juce::dontSendNotification);
+        heading = "Synth  /  " + name;
+        fitEditor();
+        synth.refresh();
+    }
+    else if (editor == Editor::sampler)
+    {
+        heading = juce::String (channel->kind == InstrumentKind::drumSampler ? "Drum kit" : "Sampler") + "  /  " + name;
+        fitEditor();
+        sampler.refresh();
     }
     else
     {
-        heading = "Drum  /  " + juce::String::fromUTF8 (channel->name.c_str());
+        heading = "Drum  /  " + name;
         hint = "Synthesised drum voice.\n\nThe note you play tunes it: C4 is the natural pitch, "
-               "higher keys in the piano roll play it higher.\n\nSample-based drums arrive with the sampler in Phase 3.";
+               "higher keys in the piano roll play it higher.\n\nFor drums from your own samples, "
+               "add a Drum kit or a Sampler channel.";
     }
     repaint();
 }
@@ -131,25 +103,17 @@ void InstrumentPanel::paint (juce::Graphics& g)
     {
         g.setColour (p.textDim);
         g.setFont (13.0f);
-        g.drawFittedText (hint, getLocalBounds().withTrimmedTop (kHeaderHeight).reduced (14, 12),
+        g.drawFittedText (hint, getLocalBounds().withTrimmedTop (kHeaderHeight).reduced (14, 12).withWidth (juce::jmin (360, getWidth() - 28)),
                           juce::Justification::topLeft, 12);
     }
 }
 
 void InstrumentPanel::resized()
 {
-    auto area = getLocalBounds().withTrimmedTop (kHeaderHeight).reduced (12, 10);
-
-    auto place = [&area] (juce::Label& label, juce::Component& editor)
-    {
-        label.setBounds (area.removeFromTop (16));
-        editor.setBounds (area.removeFromTop (24));
-        area.removeFromTop (8);
-    };
-
-    place (waveLabel, waveBox);
-    for (auto* c : controls)
-        place (c->label, c->slider);
+    viewport.setBounds (getLocalBounds().withTrimmedTop (kHeaderHeight).withTrimmedLeft (1));
+    fitEditor();
+    if (editor == Editor::synth)
+        synth.refresh(); // the sections may now fit into a different number of columns
 }
 
 } // namespace tactus::ui

@@ -2,6 +2,7 @@
 
 #include "tactus/dsp/DrumSynth.h"
 #include "tactus/dsp/PolySynth.h"
+#include "tactus/dsp/Sampler.h"
 
 #include <algorithm>
 
@@ -12,6 +13,8 @@ std::unique_ptr<Instrument> EngineController::createInstrument (InstrumentKind k
 {
     if (kind == InstrumentKind::synth)
         return std::make_unique<PolySynth>();
+    if (isSampler (kind))
+        return std::make_unique<Sampler>();
     return std::make_unique<DrumSynth> (kind);
 }
 
@@ -202,6 +205,8 @@ void EngineController::sync (const Project& project, int patternIndex, PlayMode 
         cs.id = channel.id;
         cs.processor = processor;
         cs.params = channel.synth;
+        if (isSampler (channel.kind))
+            cs.sampler = compileSampler (project, channel, pool);
         cs.insert = sourceInsert (channel.mixerInsert);
         computePanGains (channel.volume, channel.pan, channel.muted || (anySolo && cs.insert == masterIndex), cs.gainL, cs.gainR);
         if (mode == PlayMode::song)

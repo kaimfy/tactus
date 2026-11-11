@@ -9,6 +9,13 @@ const Palette& palette()
     return p;
 }
 
+juce::Colour itemColour (int index)
+{
+    static const juce::uint32 colours[kNumItemColours] = { 0xff45c4b0, 0xfff0a23c, 0xff6aa6f8, 0xffe9739a,
+                                                           0xff9bd65c, 0xffb48cf0, 0xfff07d4f, 0xff5cc8e8 };
+    return juce::Colour (colours[((index % kNumItemColours) + kNumItemColours) % kNumItemColours]);
+}
+
 TactusLookAndFeel::TactusLookAndFeel()
 {
     const auto& p = palette();
@@ -100,6 +107,53 @@ void TactusLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w
     pointer.addRoundedRectangle (-1.0f, -radius * 0.55f, 2.0f, radius * 0.4f, 1.0f);
     g.setColour (p.text);
     g.fillPath (pointer, juce::AffineTransform::rotation (angle).translated (centre.x, centre.y));
+}
+
+juce::Label* TactusLookAndFeel::createSliderTextBox (juce::Slider& slider)
+{
+    auto* label = juce::LookAndFeel_V4::createSliderTextBox (slider);
+    if (slider.isRotary())
+    {
+        // The value under a knob: small and centred, so a row of knobs reads as one line.
+        label->setFont (juce::Font (juce::FontOptions (11.5f)));
+        label->setJustificationType (juce::Justification::centred);
+        label->setMinimumHorizontalScale (0.8f);
+    }
+    return label;
+}
+
+void TactusLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height, float sliderPos,
+                                          float minSliderPos, float maxSliderPos, juce::Slider::SliderStyle style,
+                                          juce::Slider& slider)
+{
+    if (style != juce::Slider::LinearBar)
+    {
+        juce::LookAndFeel_V4::drawLinearSlider (g, x, y, width, height, sliderPos, minSliderPos, maxSliderPos, style, slider);
+        return;
+    }
+
+    // Value bars: a quiet fill with a bright edge at the value, so the number printed on
+    // top stays readable wherever the bar ends. Bipolar controls fill from their centre.
+    const auto& p = palette();
+    const auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height);
+    const auto colour = slider.isEnabled() ? p.accent : p.textDim;
+    const bool bipolar = slider.getMinimum() < 0.0 && slider.getMaximum() > 0.0;
+    const float origin = bipolar ? (float) x + (float) slider.valueToProportionOfLength (0.0) * (float) width : (float) x;
+    const float left = juce::jmin (origin, sliderPos), right = juce::jmax (origin, sliderPos);
+
+    g.setColour (slider.findColour (juce::Slider::backgroundColourId));
+    g.fillRoundedRectangle (bounds, 3.0f);
+    if (slider.findColour (juce::Slider::trackColourId).isTransparent())
+        return; // a plain number box that happens to be draggable (the tempo)
+    g.saveState();
+    g.reduceClipRegion (juce::Rectangle<float> (left, (float) y, right - left, (float) height).getSmallestIntegerContainer());
+    g.setColour (colour.withAlpha (slider.isEnabled() ? 0.30f : 0.12f));
+    g.fillRoundedRectangle (bounds, 3.0f);
+    g.restoreState();
+    if (right - left < 0.5f)
+        return; // at its origin: nothing to mark
+    g.setColour (colour.withAlpha (slider.isEnabled() ? 1.0f : 0.4f));
+    g.fillRect (juce::jlimit ((float) x, (float) (x + width) - 2.0f, sliderPos - 1.0f), (float) y + 2.0f, 2.0f, (float) height - 4.0f);
 }
 
 void TactusLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour& backgroundColour,

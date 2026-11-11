@@ -26,6 +26,10 @@ struct Palette
 
 const Palette& palette();
 
+/** The colours given to tracks, mixer inserts and channels, by index (wraps around). */
+constexpr int kNumItemColours = 8;
+juce::Colour itemColour (int index);
+
 /** Dark look-and-feel shared by the whole application. */
 class TactusLookAndFeel final : public juce::LookAndFeel_V4
 {
@@ -34,6 +38,9 @@ public:
 
     void drawRotarySlider (juce::Graphics&, int x, int y, int width, int height, float sliderPos,
                            float rotaryStartAngle, float rotaryEndAngle, juce::Slider&) override;
+    juce::Label* createSliderTextBox (juce::Slider&) override;
+    void drawLinearSlider (juce::Graphics&, int x, int y, int width, int height, float sliderPos,
+                           float minSliderPos, float maxSliderPos, juce::Slider::SliderStyle, juce::Slider&) override;
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour& backgroundColour,
                                bool highlighted, bool down) override;
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;

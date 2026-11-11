@@ -31,7 +31,7 @@ struct SamplerZoneData
 struct SamplerSetup
 {
     std::vector<SamplerZoneData> zones;
-    float attack = 0.001f, decay = 0.2f, sustain = 1.0f, release = 0.05f;
+    float attack = 0.0f, decay = 0.2f, sustain = 1.0f, release = 0.05f;
     bool oneShot = true;
 };
 

@@ -31,6 +31,10 @@ public:
     /** Asks about unsaved changes, then runs `proceed` unless the user cancels. */
     void confirmDiscardChanges (std::function<void()> proceed);
 
+    /** Opens a project file in place of the current one (which the caller has dealt with),
+        reporting any problem to the user. */
+    void openFile (const juce::File&);
+
     juce::ApplicationCommandManager& commands() noexcept { return commandManager; }
     /** Called whenever the window title should change. */
     std::function<void (const juce::String&)> onTitleChanged;
@@ -55,7 +59,7 @@ private:
     {
         cmdNew = 0x1001, cmdOpen, cmdSave, cmdSaveAs, cmdAudioSettings, cmdQuit,
         cmdPlayStop, cmdAbout, cmdUndo, cmdRedo, cmdShowPianoRoll, cmdShowArrangement, cmdShowMixer, cmdToggleSongMode,
-        cmdImportAudio, cmdRecord, cmdToggleMonitor, cmdCollectAudio
+        cmdImportAudio, cmdRecord, cmdToggleMonitor, cmdCollectAudio, cmdShowInstrument
     };
 
     void timerCallback() override;
@@ -79,7 +83,7 @@ private:
     void warnAboutMissingAudio();
     void showAbout();
     /** Chooses what the lower half of the window shows. */
-    enum class LowerView { pianoRoll, arrangement, mixer };
+    enum class LowerView { pianoRoll, arrangement, instrument, mixer };
     void showLowerView (LowerView);
     void showError (const juce::String& title, const juce::String& message);
     void setStatus (const juce::String& message);
@@ -97,10 +101,12 @@ private:
     TransportBar transport { session, device };
     ChannelRack rack { session };
     PianoRoll pianoRoll { session };
-    InstrumentPanel instrumentPanel { session };
+    InstrumentPanel instrumentPanel { session }; // the strip beside the piano roll
+    InstrumentPanel instrumentView { session };  // the full-width Instrument view
     ArrangementView arrangement { session };
     MixerView mixerView { session };
-    juce::TextButton pianoRollTab { "Piano roll" }, arrangementTab { "Arrangement" }, mixerTab { "Mixer" };
+    juce::TextButton pianoRollTab { "Piano roll" }, arrangementTab { "Arrangement" }, instrumentTab { "Instrument" },
+                     mixerTab { "Mixer" };
     LowerView lowerView = LowerView::pianoRoll;
     juce::StretchableLayoutManager layout;
     juce::StretchableLayoutResizerBar resizer { &layout, 1, false };

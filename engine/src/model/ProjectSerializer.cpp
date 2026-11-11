@@ -36,6 +36,79 @@ namespace
         return std::clamp ((int) v, lo, hi);
     }
 
+    juce::var synthToVar (const SynthParams& p)
+    {
+        auto s = makeObject();
+        set (s, "waveform", (int) p.waveform);
+        set (s, "osc1Level", p.osc1Level);
+        set (s, "waveform2", (int) p.waveform2);
+        set (s, "osc2Level", p.osc2Level);
+        set (s, "osc2Semitones", p.osc2Semitones);
+        set (s, "osc2Detune", p.osc2Detune);
+        set (s, "subLevel", p.subLevel);
+        set (s, "noiseLevel", p.noiseLevel);
+        set (s, "unison", p.unison);
+        set (s, "unisonDetune", p.unisonDetune);
+        set (s, "unisonWidth", p.unisonWidth);
+        set (s, "glide", p.glide);
+        set (s, "mono", p.mono);
+        set (s, "cutoffHz", p.cutoffHz);
+        set (s, "resonance", p.resonance);
+        set (s, "filterEnvAmount", p.filterEnvAmount);
+        set (s, "filterAttack", p.filterAttack);
+        set (s, "filterDecay", p.filterDecay);
+        set (s, "filterSustain", p.filterSustain);
+        set (s, "filterRelease", p.filterRelease);
+        set (s, "attack", p.attack);
+        set (s, "decay", p.decay);
+        set (s, "sustain", p.sustain);
+        set (s, "release", p.release);
+        set (s, "lfoShape", (int) p.lfoShape);
+        set (s, "lfoRate", p.lfoRate);
+        set (s, "lfoPitch", p.lfoPitch);
+        set (s, "lfoCutoff", p.lfoCutoff);
+        set (s, "lfoAmp", p.lfoAmp);
+        return s;
+    }
+
+    /** Anything missing keeps its default, which for the parameters added in version 5 is "off". */
+    SynthParams synthFromVar (const juce::var& s)
+    {
+        SynthParams p;
+        if (! s.isObject())
+            return p;
+        p.waveform = (Waveform) getInt (s, "waveform", 0, 0, 3);
+        p.osc1Level = getFloat (s, "osc1Level", 1.0f, 0.0f, 1.0f);
+        p.waveform2 = (Waveform) getInt (s, "waveform2", 0, 0, 3);
+        p.osc2Level = getFloat (s, "osc2Level", 0.0f, 0.0f, 1.0f);
+        p.osc2Semitones = getFloat (s, "osc2Semitones", 0.0f, -24.0f, 24.0f);
+        p.osc2Detune = getFloat (s, "osc2Detune", 0.0f, -100.0f, 100.0f);
+        p.subLevel = getFloat (s, "subLevel", 0.0f, 0.0f, 1.0f);
+        p.noiseLevel = getFloat (s, "noiseLevel", 0.0f, 0.0f, 1.0f);
+        p.unison = getInt (s, "unison", 1, 1, 7);
+        p.unisonDetune = getFloat (s, "unisonDetune", 20.0f, 0.0f, 100.0f);
+        p.unisonWidth = getFloat (s, "unisonWidth", 0.7f, 0.0f, 1.0f);
+        p.glide = getFloat (s, "glide", 0.0f, 0.0f, 2.0f);
+        p.mono = (bool) s["mono"];
+        p.cutoffHz = getFloat (s, "cutoffHz", 2400.0f, 40.0f, 18000.0f);
+        p.resonance = getFloat (s, "resonance", 0.25f, 0.0f, 1.0f);
+        p.filterEnvAmount = getFloat (s, "filterEnvAmount", 0.0f, -6.0f, 6.0f);
+        p.filterAttack = getFloat (s, "filterAttack", 0.002f, 0.0005f, 5.0f);
+        p.filterDecay = getFloat (s, "filterDecay", 0.25f, 0.001f, 5.0f);
+        p.filterSustain = getFloat (s, "filterSustain", 0.0f, 0.0f, 1.0f);
+        p.filterRelease = getFloat (s, "filterRelease", 0.2f, 0.001f, 10.0f);
+        p.attack = getFloat (s, "attack", 0.004f, 0.0005f, 5.0f);
+        p.decay = getFloat (s, "decay", 0.18f, 0.001f, 5.0f);
+        p.sustain = getFloat (s, "sustain", 0.55f, 0.0f, 1.0f);
+        p.release = getFloat (s, "release", 0.16f, 0.001f, 10.0f);
+        p.lfoShape = (LfoShape) getInt (s, "lfoShape", 0, 0, 4);
+        p.lfoRate = getFloat (s, "lfoRate", 5.0f, 0.05f, 30.0f);
+        p.lfoPitch = getFloat (s, "lfoPitch", 0.0f, 0.0f, 12.0f);
+        p.lfoCutoff = getFloat (s, "lfoCutoff", 0.0f, 0.0f, 4.0f);
+        p.lfoAmp = getFloat (s, "lfoAmp", 0.0f, 0.0f, 1.0f);
+        return p;
+    }
+
     juce::var effectToVar (const EffectSlot& e)
     {
         const auto& info = effectInfo (e.type);
@@ -101,15 +174,38 @@ std::string toJson (const Project& p)
         set (o, "muted", c.muted);
         set (o, "mixer", (juce::int64) c.mixerInsert);
 
-        auto s = makeObject();
-        set (s, "waveform", (int) c.synth.waveform);
-        set (s, "cutoffHz", c.synth.cutoffHz);
-        set (s, "resonance", c.synth.resonance);
-        set (s, "attack", c.synth.attack);
-        set (s, "decay", c.synth.decay);
-        set (s, "sustain", c.synth.sustain);
-        set (s, "release", c.synth.release);
-        set (o, "synth", s);
+        set (o, "synth", synthToVar (c.synth));
+
+        if (isSampler (c.kind))
+        {
+            auto sampler = makeObject();
+            set (sampler, "attack", c.sampler.attack);
+            set (sampler, "decay", c.sampler.decay);
+            set (sampler, "sustain", c.sampler.sustain);
+            set (sampler, "release", c.sampler.release);
+            set (sampler, "oneShot", c.sampler.oneShot);
+            juce::Array<juce::var> zones;
+            for (const auto& z : c.sampler.zones)
+            {
+                auto zo = makeObject();
+                set (zo, "id", (juce::int64) z.id);
+                set (zo, "audio", (juce::int64) z.audio);
+                set (zo, "rootKey", z.rootKey);
+                set (zo, "lowKey", z.lowKey);
+                set (zo, "highKey", z.highKey);
+                set (zo, "start", z.start);
+                set (zo, "end", z.end);
+                set (zo, "loop", z.loop);
+                set (zo, "loopStart", z.loopStart);
+                set (zo, "reverse", z.reverse);
+                set (zo, "gain", z.gain);
+                set (zo, "pan", z.pan);
+                set (zo, "tune", z.tune);
+                zones.add (zo);
+            }
+            set (sampler, "zones", zones);
+            set (o, "sampler", sampler);
+        }
         channels.add (o);
     }
     set (root, "channels", channels);
@@ -273,16 +369,40 @@ std::string fromJson (const std::string& json, Project& out)
             c.muted = (bool) o["muted"];
             c.mixerInsert = (Id) (juce::int64) o["mixer"];
 
-            const auto& s = o["synth"];
-            if (s.isObject())
+            c.synth = synthFromVar (o["synth"]);
+
+            const auto& sampler = o["sampler"];
+            if (isSampler (c.kind) && sampler.isObject())
             {
-                c.synth.waveform = (Waveform) getInt (s, "waveform", 0, 0, 3);
-                c.synth.cutoffHz = getFloat (s, "cutoffHz", 2400.0f, 40.0f, 18000.0f);
-                c.synth.resonance = getFloat (s, "resonance", 0.25f, 0.0f, 1.0f);
-                c.synth.attack = getFloat (s, "attack", 0.004f, 0.0005f, 5.0f);
-                c.synth.decay = getFloat (s, "decay", 0.18f, 0.001f, 5.0f);
-                c.synth.sustain = getFloat (s, "sustain", 0.55f, 0.0f, 1.0f);
-                c.synth.release = getFloat (s, "release", 0.16f, 0.001f, 10.0f);
+                c.sampler.attack = getFloat (sampler, "attack", 0.0f, 0.0f, 10.0f);
+                c.sampler.decay = getFloat (sampler, "decay", 0.2f, 0.001f, 10.0f);
+                c.sampler.sustain = getFloat (sampler, "sustain", 1.0f, 0.0f, 1.0f);
+                c.sampler.release = getFloat (sampler, "release", 0.05f, 0.001f, 10.0f);
+                c.sampler.oneShot = (bool) sampler.getProperty ("oneShot", true);
+                if (const auto* zones = sampler["zones"].getArray())
+                {
+                    for (const auto& zo : *zones)
+                    {
+                        SampleZone z;
+                        z.id = (Id) (juce::int64) zo["id"];
+                        if (z.id == 0)
+                            return "A sample zone of channel \"" + c.name + "\" has no id.";
+                        z.audio = (Id) (juce::int64) zo["audio"]; // checked once the audio files are known
+                        z.rootKey = getInt (zo, "rootKey", kStepKey, 0, 127);
+                        z.lowKey = getInt (zo, "lowKey", 0, 0, 127);
+                        z.highKey = getInt (zo, "highKey", 127, z.lowKey, 127);
+                        z.start = std::max (0.0, (double) zo.getProperty ("start", 0.0));
+                        z.end = std::max (0.0, (double) zo.getProperty ("end", 0.0));
+                        z.loop = (bool) zo["loop"];
+                        z.loopStart = std::max (0.0, (double) zo.getProperty ("loopStart", 0.0));
+                        z.reverse = (bool) zo["reverse"];
+                        z.gain = getFloat (zo, "gain", 1.0f, 0.0f, 4.0f);
+                        z.pan = getFloat (zo, "pan", 0.0f, -1.0f, 1.0f);
+                        z.tune = getFloat (zo, "tune", 0.0f, -48.0f, 48.0f);
+                        highestId = std::max (highestId, z.id);
+                        c.sampler.zones.push_back (z);
+                    }
+                }
             }
             highestId = std::max (highestId, c.id);
             p.channels.push_back (std::move (c));
@@ -349,6 +469,11 @@ std::string fromJson (const std::string& json, Project& out)
             p.audioFiles.push_back (std::move (f));
         }
     }
+    for (const auto& c : p.channels)
+        for (const auto& z : c.sampler.zones)
+            if (p.findAudioFile (z.audio) == nullptr)
+                return "A sample of channel \"" + c.name + "\" refers to an audio file entry that does not exist (id "
+                       + std::to_string (z.audio) + ").";
 
     // Arrangement (absent in version 1 files: they get an empty eight-track arrangement).
     const auto& arrangement = root["arrangement"];
@@ -516,6 +641,32 @@ std::string effectChainFromJson (const std::string& json, Project& idSource, std
         }
     }
     out = std::move (effects);
+    return {};
+}
+
+std::string synthPresetToJson (const std::string& name, const SynthParams& params)
+{
+    auto root = makeObject();
+    set (root, "format", "tactus-synth-preset");
+    set (root, "version", 1);
+    set (root, "name", str (name));
+    set (root, "synth", synthToVar (params));
+    return juce::JSON::toString (root).toStdString();
+}
+
+std::string synthPresetFromJson (const std::string& json, SynthParams& out, std::string* name)
+{
+    juce::var root;
+    const auto parseResult = juce::JSON::parse (juce::String::fromUTF8 (json.c_str()), root);
+    if (parseResult.failed())
+        return "Not valid JSON: " + parseResult.getErrorMessage().toStdString();
+    if (! root.isObject() || root["format"].toString() != "tactus-synth-preset" || ! root["synth"].isObject())
+        return "This file is not a Tactus synth preset.";
+    if ((int) root["version"] > 1)
+        return "This synth preset was saved by a newer version of Tactus.";
+    out = synthFromVar (root["synth"]);
+    if (name != nullptr)
+        *name = root["name"].toString().toStdString();
     return {};
 }
 

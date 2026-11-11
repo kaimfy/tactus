@@ -2,6 +2,7 @@
 
 #include "tactus/dsp/Effects.h"
 #include "tactus/dsp/Instrument.h"
+#include "tactus/dsp/Sampler.h"
 #include "tactus/engine/AudioPool.h"
 #include "tactus/model/Project.h"
 
@@ -32,6 +33,7 @@ struct ChannelSnapshot
     float gainL = 0.0f;      // target gains: volume, pan and mute folded together
     float gainR = 0.0f;
     SynthParams params;
+    std::shared_ptr<const SamplerSetup> sampler; // sampler channels: their zones and decoded samples
     int insert = -1;         // index into Snapshot::inserts; -1 = straight to the output
 };
 

@@ -149,6 +149,7 @@ private:
     Snapshot* current = nullptr;
     double sampleRate = 48000.0;
     std::vector<float> scratch;
+    std::vector<float> scratchRight; // second channel for stereo instruments
     bool playing = false;
     double activeTempo = 120.0;
     double ticksPerSample = 0.0;

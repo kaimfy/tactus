@@ -25,15 +25,50 @@ inline bool isDrum (InstrumentKind k) noexcept { return k != InstrumentKind::syn
 
 enum class Waveform { saw = 0, square, triangle, sine };
 
+enum class LfoShape { sine = 0, triangle, square, saw, random };
+
+/** The built-in subtractive synth. The defaults are a plain one-oscillator patch: everything
+    added after format version 4 is switched off by default, so older projects sound as they did. */
 struct SynthParams
 {
-    Waveform waveform = Waveform::saw;
-    float cutoffHz = 2400.0f;   // 40 .. 18000
-    float resonance = 0.25f;    // 0 .. 1
-    float attack = 0.004f;      // seconds
-    float decay = 0.18f;        // seconds
-    float sustain = 0.55f;      // 0 .. 1
-    float release = 0.16f;      // seconds
+    // Oscillators
+    Waveform waveform = Waveform::saw;  // oscillator 1
+    float osc1Level = 1.0f;             // 0 .. 1
+    Waveform waveform2 = Waveform::saw; // oscillator 2
+    float osc2Level = 0.0f;             // 0 .. 1; 0 = off
+    float osc2Semitones = 0.0f;         // -24 .. +24 against oscillator 1
+    float osc2Detune = 0.0f;            // cents, -100 .. +100
+    float subLevel = 0.0f;              // sine one octave below oscillator 1, 0 .. 1
+    float noiseLevel = 0.0f;            // white noise, 0 .. 1
+
+    // Voices
+    int unison = 1;                     // 1 .. 7 detuned copies of both oscillators per note
+    float unisonDetune = 20.0f;         // cents between the outermost copies and the centre, 0 .. 100
+    float unisonWidth = 0.7f;           // stereo spread of the copies, 0 .. 1
+    float glide = 0.0f;                 // seconds to slide from the previous note's pitch, 0 .. 2
+    bool mono = false;                  // one voice; overlapping notes slide without re-attacking
+
+    // Filter
+    float cutoffHz = 2400.0f;           // 40 .. 18000
+    float resonance = 0.25f;            // 0 .. 1
+    float filterEnvAmount = 0.0f;       // octaves the filter envelope opens (or, negative, closes) the cutoff, -6 .. +6
+    float filterAttack = 0.002f;        // seconds
+    float filterDecay = 0.25f;          // seconds
+    float filterSustain = 0.0f;         // 0 .. 1
+    float filterRelease = 0.2f;         // seconds
+
+    // Amplitude envelope
+    float attack = 0.004f;              // seconds
+    float decay = 0.18f;                // seconds
+    float sustain = 0.55f;              // 0 .. 1
+    float release = 0.16f;              // seconds
+
+    // LFO (one per channel, free-running)
+    LfoShape lfoShape = LfoShape::sine;
+    float lfoRate = 5.0f;               // Hz, 0.05 .. 30
+    float lfoPitch = 0.0f;              // vibrato depth in semitones, 0 .. 12
+    float lfoCutoff = 0.0f;             // filter sweep depth in octaves, 0 .. 4
+    float lfoAmp = 0.0f;                // tremolo depth, 0 .. 1
 
     bool operator== (const SynthParams&) const = default;
 };
@@ -63,7 +98,7 @@ struct SampleZone
 struct SamplerParams
 {
     std::vector<SampleZone> zones;
-    float attack = 0.001f;  // seconds
+    float attack = 0.0f;    // seconds; 0 leaves the sample's own attack untouched
     float decay = 0.2f;     // seconds
     float sustain = 1.0f;   // 0 .. 1
     float release = 0.05f;  // seconds
@@ -211,7 +246,7 @@ struct MixerInsert
 
 struct Project
 {
-    static constexpr int kFormatVersion = 4;
+    static constexpr int kFormatVersion = 5;
 
     std::string name = "Untitled";
     double tempo = 128.0;
@@ -300,6 +335,10 @@ struct Project
         firstKey, each at its recorded pitch, in place of the original zone. Returns the
         number of pieces, or 0 if nothing was cut. */
     int sliceSampleZone (Id channel, Id zone, std::vector<double> cuts, double regionEnd, int firstKey = kStepKey);
+    /** Multi-sampling: gives every zone the keys nearest its root key, so each key plays the
+        sample recorded closest to it. Zones with the same root share a range (they layer).
+        Returns false if the channel has no zones. */
+    bool spreadSampleZones (Id channel);
     /** The lowest key from `from` upwards that no zone of the channel covers; -1 if none. */
     int firstFreeSampleKey (Id channel, int from = kStepKey) const;
 

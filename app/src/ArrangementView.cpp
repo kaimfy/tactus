@@ -13,16 +13,12 @@ namespace
     constexpr int kResizeHandle = 8;
     constexpr int kExtraBars = 8;       // empty room after the end of the song
 
-    const juce::uint32 kTrackColours[] = { 0xff45c4b0, 0xfff0a23c, 0xff6aa6f8, 0xffe9739a,
-                                           0xff9bd65c, 0xffb48cf0, 0xfff07d4f, 0xff5cc8e8 };
-
     enum SnapChoice { snapBar = 1, snapBeat, snapStep };
 }
 
 juce::Colour ArrangementView::trackColour (int index)
 {
-    const int count = (int) std::size (kTrackColours);
-    return juce::Colour (kTrackColours[((index % count) + count) % count]);
+    return itemColour (index);
 }
 
 ArrangementView::ArrangementView (Session& s) : session (s)
@@ -550,12 +546,12 @@ void ArrangementView::headerClicked (const juce::MouseEvent& e)
 void ArrangementView::showTrackMenu (int track)
 {
     juce::PopupMenu colours;
-    for (int i = 0; i < (int) std::size (kTrackColours); ++i)
+    for (int i = 0; i < kNumItemColours; ++i)
     {
         juce::PopupMenu::Item item ("Colour " + juce::String (i + 1));
         item.itemID = 100 + i;
         item.colour = trackColour (i);
-        item.isTicked = session.project().arrangement.tracks[(std::size_t) track].colour % (int) std::size (kTrackColours) == i;
+        item.isTicked = session.project().arrangement.tracks[(std::size_t) track].colour % kNumItemColours == i;
         colours.addItem (item);
     }
 

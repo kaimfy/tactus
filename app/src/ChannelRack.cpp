@@ -6,7 +6,23 @@ namespace tactus::ui
 namespace
 {
     constexpr int kStepWidth = 26;
-    constexpr int kControlsWidth = 258; // mute + name + volume + pan
+    constexpr int kControlsWidth = 296; // mute + kind tag + name + volume + pan
+
+    /** Three letters that say what kind of instrument a channel is. */
+    const char* kindTag (InstrumentKind kind)
+    {
+        switch (kind)
+        {
+            case InstrumentKind::synth:       return "SYN";
+            case InstrumentKind::sampler:     return "SMP";
+            case InstrumentKind::drumSampler: return "KIT";
+            case InstrumentKind::kick:
+            case InstrumentKind::snare:
+            case InstrumentKind::hiHat:
+            case InstrumentKind::clap:        return "DRM";
+        }
+        return "";
+    }
 }
 
 //==============================================================================
@@ -36,7 +52,8 @@ public:
             const bool on = pattern.stepActive (channelId, step);
             const bool darkGroup = (step / 4) % 2 == 1; // alternate shading per beat
 
-            auto colour = on ? p.accent : (darkGroup ? p.control.darker (0.25f) : p.control.brighter (0.06f));
+            // The dark beats are darker than any row background, so they show on the selected row too.
+            auto colour = on ? p.accent : (darkGroup ? p.background : p.control.brighter (0.06f));
             if (step == playStep)
                 colour = on ? juce::Colours::white : colour.brighter (0.35f);
 
@@ -156,19 +173,47 @@ public:
             return;
         muteButton.setToggleState (! c->muted, juce::dontSendNotification);
         nameButton.setButtonText (juce::String::fromUTF8 (c->name.c_str()));
-        const bool selected = session.selectedChannelIndex() == indexInProject();
+        selected = session.selectedChannelIndex() == indexInProject();
         nameButton.setColour (juce::TextButton::buttonColourId, selected ? palette().accentAlt.withAlpha (0.55f) : palette().control);
         volumeKnob.setValue (c->volume, juce::dontSendNotification);
         panKnob.setValue (c->pan, juce::dontSendNotification);
+
+        // The channel wears the colour of the mixer insert it plays into.
+        const auto* insert = session.project().findInsert (c->mixerInsert);
+        colour = itemColour (insert != nullptr ? insert->colour : indexInProject());
+        tag = kindTag (c->kind);
+        dimmed = c->muted;
         grid.repaint();
+        repaint();
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        const auto& p = palette();
+        if (selected)
+        {
+            g.setColour (p.panelRaised);
+            g.fillRect (getLocalBounds().reduced (0, 1));
+        }
+        g.setColour (colour.withAlpha (dimmed ? 0.35f : 1.0f));
+        g.fillRect (0, 3, 3, getHeight() - 6);
+
+        const auto tagArea = tagBounds.toFloat();
+        g.setColour (colour.withAlpha (dimmed ? 0.08f : 0.16f));
+        g.fillRoundedRectangle (tagArea, 3.0f);
+        g.setColour (colour.withAlpha (dimmed ? 0.45f : 1.0f));
+        g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)));
+        g.drawText (tag, tagBounds, juce::Justification::centred);
     }
 
     void resized() override
     {
         auto area = getLocalBounds().reduced (0, 3);
-        area.removeFromLeft (8);
+        area.removeFromLeft (10);
         muteButton.setBounds (area.removeFromLeft (18).withSizeKeepingCentre (14, 14));
-        area.removeFromLeft (8);
+        area.removeFromLeft (6);
+        tagBounds = area.removeFromLeft (32).withSizeKeepingCentre (32, 18);
+        area.removeFromLeft (6);
         nameButton.setBounds (area.removeFromLeft (132));
         area.removeFromLeft (8);
         volumeKnob.setBounds (area.removeFromLeft (30));
@@ -212,6 +257,10 @@ private:
     juce::TextButton nameButton;
     juce::Slider volumeKnob, panKnob;
     StepGrid grid;
+    juce::Rectangle<int> tagBounds;
+    juce::Colour colour;
+    juce::String tag;
+    bool selected = false, dimmed = false;
 };
 
 //==============================================================================
@@ -309,7 +358,9 @@ void ChannelRack::showAddMenu()
     juce::PopupMenu menu;
     menu.addSectionHeader ("Instruments");
     menu.addItem (1, "Synth");
-    menu.addSectionHeader ("Drums");
+    menu.addItem (6, "Sampler (plays an audio file)");
+    menu.addItem (7, "Drum kit (a sample on each pad)");
+    menu.addSectionHeader ("Synthesised drums");
     menu.addItem (2, "Kick");
     menu.addItem (3, "Snare");
     menu.addItem (4, "Hi-hat");
@@ -318,8 +369,9 @@ void ChannelRack::showAddMenu()
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (addButton), [this] (int choice)
     {
         static const InstrumentKind kinds[] = { InstrumentKind::synth, InstrumentKind::kick, InstrumentKind::snare,
-                                                InstrumentKind::hiHat, InstrumentKind::clap };
-        if (choice < 1 || choice > 5)
+                                                InstrumentKind::hiHat, InstrumentKind::clap, InstrumentKind::sampler,
+                                                InstrumentKind::drumSampler };
+        if (choice < 1 || choice > 7)
             return;
         auto& project = session.project();
         const auto channelId = project.addChannel (kinds[choice - 1]).id;

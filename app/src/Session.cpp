@@ -270,9 +270,12 @@ juce::StringArray Session::missingAudioFiles()
     auto& pool = engineController.audioPool();
     for (const auto& f : currentProject.audioFiles)
     {
-        // Only files that are actually placed in the arrangement matter.
-        const bool used = std::any_of (currentProject.arrangement.clips.begin(), currentProject.arrangement.clips.end(),
-                                       [&f] (const Clip& c) { return c.audio == f.id; });
+        // Only files that are actually used matter: placed in the arrangement, or played by a sampler.
+        bool used = std::any_of (currentProject.arrangement.clips.begin(), currentProject.arrangement.clips.end(),
+                                 [&f] (const Clip& c) { return c.audio == f.id; });
+        for (const auto& channel : currentProject.channels)
+            used = used || std::any_of (channel.sampler.zones.begin(), channel.sampler.zones.end(),
+                                        [&f] (const SampleZone& z) { return z.audio == f.id; });
         if (used && pool.get (f.path) == nullptr)
             missing.add (juce::String::fromUTF8 (pool.errorFor (f.path).c_str()));
     }

@@ -25,7 +25,10 @@ what does not yet, and [docs/ROADMAP.md](docs/ROADMAP.md) for the plan.
 - Mix: master and inserts with faders, balance, mute / solo, meters, buses and sends.
 - 12 effects (EQ, compressor, limiter, reverb, delay, distortion, chorus, flanger, phaser,
   stereo imager, noise gate, filter) with presets and savable effect chains.
-- Play through a built-in polyphonic synth and four synthesised drum voices.
+- Play through a built-in polyphonic synth (two oscillators, sub, noise, unison, filter
+  envelope, LFO, glide; 20 presets, and your own saved as files) and four synthesised drum voices.
+- Play your own samples: a sampler (pitch by key, loop, reverse, envelope, multi-sample key
+  zones) and a 16-pad drum kit; slice a loop into equal parts or at its hits.
 - Set tempo and time signature, loop or play once, use a metronome, pause and resume.
 - Mix each channel with volume, pan and mute; watch output level, CPU load and underruns.
 - Choose the audio device, sample rate and buffer size.
@@ -40,6 +43,8 @@ Requirements: CMake 3.24+, Ninja, a C++20 compiler (Visual Studio 2022 or newer 
 .\dev.ps1 test        # builds everything and runs the tests
 .\dev.ps1 run         # builds and starts the application
 ```
+
+`Tactus.exe path\to\song.tactus` opens that project at start.
 
 On Linux and macOS use CMake directly (not yet tested there — see STATUS):
 

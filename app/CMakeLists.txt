@@ -13,7 +13,9 @@ target_sources(Tactus PRIVATE
     src/PianoRoll.cpp
     src/ArrangementView.cpp
     src/MixerView.cpp
-    src/InstrumentPanel.cpp)
+    src/InstrumentPanel.cpp
+    src/SamplerPanel.cpp
+    src/SynthPanel.cpp)
 
 target_compile_definitions(Tactus PRIVATE
     TACTUS_VERSION_STRING="${PROJECT_VERSION}")

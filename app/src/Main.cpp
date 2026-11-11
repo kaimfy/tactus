@@ -45,7 +45,7 @@ public:
     const juce::String getApplicationVersion() override { return TACTUS_VERSION_STRING; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
-    void initialise (const juce::String&) override
+    void initialise (const juce::String& commandLine) override
     {
         logger.reset (juce::FileLogger::createDefaultAppLogger ("Tactus", "tactus.log",
                                                                 "Tactus " TACTUS_VERSION_STRING " started", 512 * 1024));
@@ -60,6 +60,16 @@ public:
 
         juce::LookAndFeel::setDefaultLookAndFeel (&lookAndFeel);
         window = std::make_unique<MainWindow> (settings);
+
+        // "Tactus.exe song.tactus" (or a project dropped on the program) opens that project.
+        const auto path = commandLine.trim().unquoted();
+        if (path.isNotEmpty() && juce::File::isAbsolutePath (path))
+        {
+            if (const juce::File file (path); file.existsAsFile())
+                window->content().openFile (file);
+            else
+                juce::Logger::writeToLog ("Project given on the command line was not found: " + path);
+        }
     }
 
     void shutdown() override

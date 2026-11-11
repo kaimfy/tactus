@@ -41,7 +41,8 @@ fails the build if any file under `engine/` includes a `juce_gui_*` or `juce_gra
 | Audio pool | `engine/AudioPool.*` | Decodes and caches audio files; waveform peaks. |
 | Recorder | `engine/Recorder.*` | Captures the input to a WAV file, aligned to the timeline. |
 | Project files | `model/ProjectFiles.*` | Backups of earlier saves; collecting audio into the project folder. |
-| DSP | `dsp/Instrument.h`, `PolySynth`, `DrumSynth` | Sound generators behind one interface. |
+| DSP | `dsp/Instrument.h`, `PolySynth`, `DrumSynth`, `Sampler` | Sound generators behind one interface. |
+| Slicing | `engine/SampleSlicer.*` | Where to cut a sample: equal parts, or at transients. |
 | Effects | `model/EffectInfo.*`, `dsp/Effects.*` | Effect parameter tables and the 12 effect processors. |
 | Snapshot | `engine/Snapshot.*` | Immutable compiled form of the project for the audio thread. |
 | Audio engine | `engine/AudioEngine.*` | Transport, sequencer, rendering, mixing, metering. |
@@ -229,6 +230,54 @@ Four independent layers, each simple:
 - **Solo** is resolved when the snapshot is compiled: a soloed insert, everything feeding it
   and everything it feeds stay audible; the rest are silenced at their faders.
 
+## 6h. Sampler
+
+- **One model for four features.** A sampler channel holds a list of `SampleZone`s: an audio
+  file, the keys it answers to, a root key, start / end, loop, direction, gain, pan, tuning.
+  One zone over all keys is a plain sampler; several key ranges are a multi-sample; one-key
+  zones are drum pads; slicing replaces a zone by one-key zones over consecutive stretches of
+  the same file. The "Sampler" and "Drum kit" channel kinds share the engine and differ only
+  in what the panel shows. Zones refer to `Project::audioFiles`, so collecting audio, missing
+  files and undo work exactly as for audio clips.
+- **Sample data travels with the snapshot.** `compileSampler()` turns the zones into a
+  `SamplerSetup` (frames instead of seconds, the decoded `AudioData` attached) owned by the
+  `ChannelSnapshot`. The audio thread hands it to the instrument at the moment it adopts a new
+  snapshot — before the old one is released — so a voice never reads data whose owner is gone.
+  A voice whose zone still plays the same stretch of the same file is re-pointed and carries
+  on (moving a gain or the envelope does not interrupt a note); otherwise it stops.
+- **Nothing clicks.** A zone starting inside its file fades in over 16 frames; every zone
+  fades out over its last 64; a loop cross-fades over up to 10 ms using the audio before the
+  loop start (a loop over the whole zone gets none and plays exactly as cut); a voice that
+  must stop at once — stolen, or its sample removed — leaves its last output value to a
+  3 ms decaying tail. A zone that starts at the beginning of its file gets no fade-in, so a
+  drum hit keeps its attack bit for bit.
+- **Stereo.** `Instrument` gained an optional `renderStereo()`; mono instruments are untouched.
+- **Slicing** is two pure functions that return cut points (`equalSliceCuts`,
+  `detectTransients`: a rise in 3 ms level windows against the windows before) plus one model
+  operation (`Project::sliceSampleZone`). The UI only joins them.
+
+## 6i. Synth
+
+- **Additions are off by default.** Every parameter added to `SynthParams` after format
+  version 4 defaults to "no effect", and with those defaults `PolySynth` produces the
+  original one-oscillator output sample for sample (a test compares). Old projects and the
+  step sequencer's default sound are therefore unchanged.
+- **Voice.** Two oscillators (saw and square band-limited with PolyBLEP), each in up to seven
+  unison copies detuned evenly across ± `unisonDetune` cents and panned across the stereo
+  field, scaled by 1/√n so more copies are thicker, not louder; plus a sine sub and noise;
+  into the state-variable low-pass (one state per side) and the amplitude envelope. The
+  synth is stereo only when unison width makes it so; otherwise both sides are identical.
+- **Control rate.** Pitch (glide, vibrato), each voice's cutoff (knob × filter envelope ×
+  LFO) and the LFO itself are computed once per 32 samples. The tremolo factor is ramped
+  across the chunk, so a square LFO on the level does not click.
+- **Glide and mono.** A new note starts at the pitch of the last one and moves at a constant
+  rate to its own. In mono mode a note that arrives while another sounds re-targets the one
+  voice without restarting its envelopes (legato); after a release the next note attacks.
+- **Determinism.** The noise and the random LFO come from a fixed-seed generator reset in
+  `prepare()`, so the same project renders the same audio every time (tests rely on it).
+- **Presets** are plain `SynthParams` values (`SynthPresets.cpp`); a preset file is the
+  `synth` object of the project format in its own small JSON document.
+
 ## 7. UI structure (`app/`)
 
 `Session` holds the open `Project` plus the editing context (current pattern, selected
@@ -244,7 +293,9 @@ Project. Panels never talk to each other.
 | `PianoRoll` | Note editor for the selected channel. |
 | `ArrangementView` | Tracks and pattern clips; shares the lower half of the window with the piano roll. |
 | `MixerView` | Mixer strips and the selected insert's routing, effect chain and effect controls (generated from `EffectInfo`). |
-| `InstrumentPanel` | Parameters of the selected channel's instrument. |
+| `InstrumentPanel` | The selected channel's instrument editor in a scrolling frame. Used twice: narrow beside the piano roll, and full width as the Instrument view (F4). |
+| `SynthPanel` | Inside the instrument panel for synth channels: sections of knobs that flow into as many columns as fit, envelope graphs, presets. |
+| `SamplerPanel` | Inside the instrument panel for sampler and drum-kit channels: loading, pads, zones, slicing, envelope. |
 | `Theme` | Palette and look-and-feel; components take colours only from here. |
 
 ## 8. Error handling

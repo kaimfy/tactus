@@ -26,6 +26,12 @@ namespace ProjectSerializer
     std::string effectChainToJson (const std::vector<EffectSlot>& effects);
     /** Parses a chain preset. The effects get fresh ids from `idSource`. On failure `out` is untouched. */
     std::string effectChainFromJson (const std::string& json, Project& idSource, std::vector<EffectSlot>& out);
+
+    /** Synth presets (.tactussynth): one synth's settings. */
+    std::string synthPresetToJson (const std::string& name, const SynthParams&);
+    /** Parses a synth preset; settings the file does not mention take their defaults.
+        On failure `out` is untouched. */
+    std::string synthPresetFromJson (const std::string& json, SynthParams& out, std::string* name = nullptr);
 }
 
 } // namespace tactus

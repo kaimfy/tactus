@@ -39,6 +39,7 @@ void AudioEngine::prepare (double newSampleRate, int maxBlockSize)
     reanchor(); // keep the musical position across a sample-rate change
     sampleRate = newSampleRate > 0.0 ? newSampleRate : 48000.0;
     scratch.assign ((std::size_t) std::max (64, maxBlockSize), 0.0f);
+    scratchRight.assign (scratch.size(), 0.0f);
     activeTempo = tempo.load();
     ticksPerSample = activeTempo * kPPQ / (60.0 * sampleRate);
     clickLevel = 0.0f;
@@ -200,6 +201,10 @@ void AudioEngine::handleCommand (const Command& c) noexcept
         {
             Snapshot* old = current;
             current = c.snapshot;
+            // Samplers move over to the new snapshot's sample data now, while the old
+            // snapshot (which their voices may still be reading) is certain to exist.
+            for (auto& ch : current->channels)
+                ch.processor->instrument->setSampleData (ch.sampler.get());
             if (old != nullptr)
                 garbage.push (old); // cannot fail: the control thread limits snapshots in flight
             break;
@@ -523,6 +528,19 @@ void AudioEngine::renderChannel (ChannelSnapshot& ch, float* left, float* right,
     float* buffer = scratch.data();
     std::fill (buffer, buffer + numSamples, 0.0f);
 
+    // A mono instrument feeds both sides from one buffer; a stereo one fills two.
+    const bool stereo = instrument.isStereo();
+    float* bufferRight = stereo ? scratchRight.data() : buffer;
+    if (stereo)
+        std::fill (bufferRight, bufferRight + numSamples, 0.0f);
+    auto renderPart = [&] (int from, int count) noexcept
+    {
+        if (stereo)
+            instrument.renderStereo (buffer + from, bufferRight + from, count);
+        else
+            instrument.render (buffer + from, count);
+    };
+
     // Sequenced notes: render up to each note-on, start the note, carry on.
     int cursor = 0;
     if (playing)
@@ -541,7 +559,7 @@ void AudioEngine::renderChannel (ChannelSnapshot& ch, float* left, float* right,
 
             if (offset > cursor)
             {
-                instrument.render (buffer + cursor, offset - cursor);
+                renderPart (cursor, offset - cursor);
                 cursor = offset;
             }
             const auto duration = std::max<std::int64_t> (1, std::llround ((double) it->length / ticksPerSample));
@@ -549,7 +567,7 @@ void AudioEngine::renderChannel (ChannelSnapshot& ch, float* left, float* right,
         }
     }
     if (cursor < numSamples)
-        instrument.render (buffer + cursor, numSamples - cursor);
+        renderPart (cursor, numSamples - cursor);
 
     // Volume / pan / mute, ramped over the segment so changes never click.
     if (! processor.gainInitialised)
@@ -566,7 +584,7 @@ void AudioEngine::renderChannel (ChannelSnapshot& ch, float* left, float* right,
         gl += stepL;
         gr += stepR;
         left[i] += buffer[i] * gl;
-        right[i] += buffer[i] * gr;
+        right[i] += bufferRight[i] * gr;
     }
     processor.currentGainL = ch.gainL;
     processor.currentGainR = ch.gainR;
