@@ -1,0 +1,551 @@
+#include "tactus/model/ProjectSerializer.h"
+
+#include <juce_core/juce_core.h>
+
+#include <algorithm>
+
+namespace tactus::ProjectSerializer
+{
+
+namespace
+{
+    constexpr const char* kFormatName = "tactus-project";
+
+    juce::var makeObject() { return juce::var (new juce::DynamicObject()); }
+
+    void set (juce::var& obj, const char* key, const juce::var& value)
+    {
+        obj.getDynamicObject()->setProperty (key, value);
+    }
+
+    juce::String str (const std::string& s) { return juce::String::fromUTF8 (s.c_str()); }
+
+    float getFloat (const juce::var& obj, const char* key, float fallback, float lo, float hi)
+    {
+        const auto& v = obj[key];
+        if (! (v.isDouble() || v.isInt() || v.isInt64()))
+            return fallback;
+        return std::clamp ((float) (double) v, lo, hi);
+    }
+
+    int getInt (const juce::var& obj, const char* key, int fallback, int lo, int hi)
+    {
+        const auto& v = obj[key];
+        if (! (v.isDouble() || v.isInt() || v.isInt64()))
+            return fallback;
+        return std::clamp ((int) v, lo, hi);
+    }
+
+    juce::var effectToVar (const EffectSlot& e)
+    {
+        const auto& info = effectInfo (e.type);
+        auto o = makeObject();
+        set (o, "id", (juce::int64) e.id);
+        set (o, "type", str (info.id));
+        set (o, "bypassed", e.bypassed);
+        auto params = makeObject();
+        for (std::size_t i = 0; i < info.params.size() && i < e.params.size(); ++i)
+            set (params, info.params[i].id.c_str(), e.params[i]);
+        set (o, "params", params);
+        return o;
+    }
+
+    /** Reads one effect. Parameters missing from the file take their default; an unknown
+        effect type or parameter name is an error (it would mean a newer, incompatible file). */
+    std::string effectFromVar (const juce::var& o, EffectSlot& out)
+    {
+        EffectSlot e;
+        e.id = (Id) (juce::int64) o["id"];
+        const auto typeId = o["type"].toString().toStdString();
+        if (! effectTypeFromId (typeId, e.type))
+            return "Unknown effect type \"" + typeId + "\".";
+        const auto& info = effectInfo (e.type);
+        e.bypassed = (bool) o["bypassed"];
+        e.params = info.defaults();
+        if (auto* params = o["params"].getDynamicObject())
+        {
+            for (const auto& property : params->getProperties())
+            {
+                const auto name = property.name.toString().toStdString();
+                const int index = info.indexOf (name);
+                if (index < 0)
+                    return "The " + info.name + " has an unknown parameter \"" + name + "\".";
+                e.params[(std::size_t) index] = info.params[(std::size_t) index].clamp ((float) (double) property.value);
+            }
+        }
+        out = std::move (e);
+        return {};
+    }
+}
+
+std::string toJson (const Project& p)
+{
+    auto root = makeObject();
+    set (root, "format", kFormatName);
+    set (root, "version", Project::kFormatVersion);
+    set (root, "name", str (p.name));
+    set (root, "tempo", p.tempo);
+    set (root, "timeSigNumerator", p.timeSigNumerator);
+    set (root, "timeSigDenominator", p.timeSigDenominator);
+    set (root, "nextId", (juce::int64) p.nextId);
+
+    juce::Array<juce::var> channels;
+    for (const auto& c : p.channels)
+    {
+        auto o = makeObject();
+        set (o, "id", (juce::int64) c.id);
+        set (o, "name", str (c.name));
+        set (o, "kind", toString (c.kind));
+        set (o, "volume", c.volume);
+        set (o, "pan", c.pan);
+        set (o, "muted", c.muted);
+        set (o, "mixer", (juce::int64) c.mixerInsert);
+
+        auto s = makeObject();
+        set (s, "waveform", (int) c.synth.waveform);
+        set (s, "cutoffHz", c.synth.cutoffHz);
+        set (s, "resonance", c.synth.resonance);
+        set (s, "attack", c.synth.attack);
+        set (s, "decay", c.synth.decay);
+        set (s, "sustain", c.synth.sustain);
+        set (s, "release", c.synth.release);
+        set (o, "synth", s);
+        channels.add (o);
+    }
+    set (root, "channels", channels);
+
+    juce::Array<juce::var> patterns;
+    for (const auto& pat : p.patterns)
+    {
+        auto o = makeObject();
+        set (o, "id", (juce::int64) pat.id);
+        set (o, "name", str (pat.name));
+        set (o, "lengthSteps", pat.lengthSteps);
+        set (o, "swing", pat.swing);
+
+        juce::Array<juce::var> tracks;
+        for (const auto& [channelId, notes] : pat.notes)
+        {
+            if (notes.empty())
+                continue;
+            auto t = makeObject();
+            set (t, "channel", (juce::int64) channelId);
+            juce::Array<juce::var> list;
+            for (const auto& n : notes)
+            {
+                // Compact [start, length, key, velocity] rows keep large projects readable and small.
+                juce::Array<juce::var> row;
+                row.add ((juce::int64) n.start);
+                row.add ((juce::int64) n.length);
+                row.add (n.key);
+                row.add (n.velocity);
+                list.add (row);
+            }
+            set (t, "notes", list);
+            tracks.add (t);
+        }
+        set (o, "tracks", tracks);
+        patterns.add (o);
+    }
+    set (root, "patterns", patterns);
+
+    juce::Array<juce::var> audioFiles;
+    for (const auto& f : p.audioFiles)
+    {
+        auto o = makeObject();
+        set (o, "id", (juce::int64) f.id);
+        set (o, "path", str (f.path));
+        audioFiles.add (o);
+    }
+    set (root, "audioFiles", audioFiles);
+
+    auto arrangement = makeObject();
+    set (arrangement, "loopStart", (juce::int64) p.arrangement.loopStart);
+    set (arrangement, "loopEnd", (juce::int64) p.arrangement.loopEnd);
+
+    juce::Array<juce::var> tracks;
+    for (const auto& t : p.arrangement.tracks)
+    {
+        auto o = makeObject();
+        set (o, "id", (juce::int64) t.id);
+        set (o, "name", str (t.name));
+        set (o, "muted", t.muted);
+        set (o, "solo", t.solo);
+        set (o, "colour", t.colour);
+        set (o, "mixer", (juce::int64) t.mixerInsert);
+        tracks.add (o);
+    }
+    set (arrangement, "tracks", tracks);
+
+    juce::Array<juce::var> clips;
+    for (const auto& c : p.arrangement.clips)
+    {
+        auto o = makeObject();
+        set (o, "id", (juce::int64) c.id);
+        set (o, "pattern", (juce::int64) c.pattern);
+        set (o, "track", c.track);
+        set (o, "start", (juce::int64) c.start);
+        set (o, "length", (juce::int64) c.length);
+        set (o, "offset", (juce::int64) c.offset);
+        if (c.isAudio())
+        {
+            set (o, "audio", (juce::int64) c.audio);
+            set (o, "audioOffset", c.audioOffset);
+            set (o, "gain", c.gain);
+        }
+        clips.add (o);
+    }
+    set (arrangement, "clips", clips);
+    set (root, "arrangement", arrangement);
+
+    juce::Array<juce::var> mixer;
+    for (const auto& m : p.mixer)
+    {
+        auto o = makeObject();
+        set (o, "id", (juce::int64) m.id);
+        set (o, "name", str (m.name));
+        set (o, "colour", m.colour);
+        set (o, "volume", m.volume);
+        set (o, "pan", m.pan);
+        set (o, "muted", m.muted);
+        set (o, "solo", m.solo);
+        set (o, "output", (juce::int64) m.output);
+        juce::Array<juce::var> sends;
+        for (const auto& s : m.sends)
+        {
+            auto so = makeObject();
+            set (so, "target", (juce::int64) s.target);
+            set (so, "level", s.level);
+            sends.add (so);
+        }
+        set (o, "sends", sends);
+        juce::Array<juce::var> effects;
+        for (const auto& e : m.effects)
+            effects.add (effectToVar (e));
+        set (o, "effects", effects);
+        mixer.add (o);
+    }
+    set (root, "mixer", mixer);
+    return juce::JSON::toString (root).toStdString();
+}
+
+std::string fromJson (const std::string& json, Project& out)
+{
+    juce::var root;
+    const auto parseResult = juce::JSON::parse (juce::String::fromUTF8 (json.c_str()), root);
+    if (parseResult.failed())
+        return "Not valid JSON: " + parseResult.getErrorMessage().toStdString();
+
+    if (! root.isObject() || root["format"].toString() != kFormatName)
+        return "This file is not a Tactus project.";
+
+    const int version = (int) root["version"];
+    if (version < 1)
+        return "The project has no valid format version.";
+    if (version > Project::kFormatVersion)
+        return "This project was saved by a newer version of Tactus (format " + std::to_string (version)
+               + "; this build reads up to " + std::to_string (Project::kFormatVersion) + ").";
+
+    Project p;
+    p.name = root["name"].toString().toStdString();
+    p.tempo = std::clamp ((double) root.getProperty ("tempo", 120.0), kMinTempo, kMaxTempo);
+    p.timeSigNumerator = getInt (root, "timeSigNumerator", 4, 1, 32);
+    p.timeSigDenominator = getInt (root, "timeSigDenominator", 4, 1, 32);
+
+    Id highestId = 0;
+
+    if (const auto* channels = root["channels"].getArray())
+    {
+        for (const auto& o : *channels)
+        {
+            Channel c;
+            c.id = (Id) (juce::int64) o["id"];
+            if (c.id == 0)
+                return "A channel has no id.";
+            if (p.findChannel (c.id) != nullptr)
+                return "Two channels share the id " + std::to_string (c.id) + ".";
+            c.name = o["name"].toString().toStdString();
+            if (! instrumentKindFromString (o["kind"].toString().toStdString(), c.kind))
+                return "Channel \"" + c.name + "\" uses an unknown instrument type \""
+                       + o["kind"].toString().toStdString() + "\".";
+            c.volume = getFloat (o, "volume", 0.8f, 0.0f, 1.0f);
+            c.pan = getFloat (o, "pan", 0.0f, -1.0f, 1.0f);
+            c.muted = (bool) o["muted"];
+            c.mixerInsert = (Id) (juce::int64) o["mixer"];
+
+            const auto& s = o["synth"];
+            if (s.isObject())
+            {
+                c.synth.waveform = (Waveform) getInt (s, "waveform", 0, 0, 3);
+                c.synth.cutoffHz = getFloat (s, "cutoffHz", 2400.0f, 40.0f, 18000.0f);
+                c.synth.resonance = getFloat (s, "resonance", 0.25f, 0.0f, 1.0f);
+                c.synth.attack = getFloat (s, "attack", 0.004f, 0.0005f, 5.0f);
+                c.synth.decay = getFloat (s, "decay", 0.18f, 0.001f, 5.0f);
+                c.synth.sustain = getFloat (s, "sustain", 0.55f, 0.0f, 1.0f);
+                c.synth.release = getFloat (s, "release", 0.16f, 0.001f, 10.0f);
+            }
+            highestId = std::max (highestId, c.id);
+            p.channels.push_back (std::move (c));
+        }
+    }
+
+    if (const auto* patterns = root["patterns"].getArray())
+    {
+        for (const auto& o : *patterns)
+        {
+            Pattern pat;
+            pat.id = (Id) (juce::int64) o["id"];
+            if (pat.id == 0)
+                return "A pattern has no id.";
+            pat.name = o["name"].toString().toStdString();
+            pat.lengthSteps = getInt (o, "lengthSteps", 16, 1, 4096);
+            pat.swing = getFloat (o, "swing", 0.0f, 0.0f, 1.0f);
+
+            if (const auto* tracks = o["tracks"].getArray())
+            {
+                for (const auto& t : *tracks)
+                {
+                    const auto channelId = (Id) (juce::int64) t["channel"];
+                    if (p.findChannel (channelId) == nullptr)
+                        return "Pattern \"" + pat.name + "\" has notes for a channel that does not exist (id "
+                               + std::to_string (channelId) + ").";
+
+                    auto& list = pat.notes[channelId];
+                    if (const auto* notes = t["notes"].getArray())
+                    {
+                        for (const auto& row : *notes)
+                        {
+                            const auto* fields = row.getArray();
+                            if (fields == nullptr || fields->size() != 4)
+                                return "Pattern \"" + pat.name + "\" contains a malformed note.";
+                            Note n;
+                            n.start = std::max<std::int64_t> (0, (juce::int64) (*fields)[0]);
+                            n.length = std::max<std::int64_t> (1, (juce::int64) (*fields)[1]);
+                            n.key = std::clamp ((int) (*fields)[2], 0, 127);
+                            n.velocity = std::clamp ((float) (double) (*fields)[3], 0.0f, 1.0f);
+                            list.push_back (n);
+                        }
+                    }
+                }
+            }
+            highestId = std::max (highestId, pat.id);
+            p.patterns.push_back (std::move (pat));
+        }
+    }
+
+    if (p.patterns.empty())
+        return "The project contains no patterns.";
+
+    if (const auto* audioFiles = root["audioFiles"].getArray())
+    {
+        for (const auto& o : *audioFiles)
+        {
+            AudioFile f;
+            f.id = (Id) (juce::int64) o["id"];
+            if (f.id == 0)
+                return "An audio file entry has no id.";
+            f.path = o["path"].toString().toStdString();
+            highestId = std::max (highestId, f.id);
+            p.audioFiles.push_back (std::move (f));
+        }
+    }
+
+    // Arrangement (absent in version 1 files: they get an empty eight-track arrangement).
+    const auto& arrangement = root["arrangement"];
+    if (arrangement.isObject())
+    {
+        p.arrangement.loopStart = std::max<std::int64_t> (0, (juce::int64) arrangement["loopStart"]);
+        p.arrangement.loopEnd = std::max<std::int64_t> (0, (juce::int64) arrangement["loopEnd"]);
+
+        if (const auto* tracks = arrangement["tracks"].getArray())
+        {
+            for (const auto& o : *tracks)
+            {
+                Track t;
+                t.id = (Id) (juce::int64) o["id"];
+                if (t.id == 0)
+                    return "A track has no id.";
+                t.name = o["name"].toString().toStdString();
+                t.muted = (bool) o["muted"];
+                t.solo = (bool) o["solo"];
+                t.colour = getInt (o, "colour", 0, 0, 1000);
+                t.mixerInsert = (Id) (juce::int64) o["mixer"];
+                highestId = std::max (highestId, t.id);
+                p.arrangement.tracks.push_back (std::move (t));
+            }
+        }
+
+        if (const auto* clips = arrangement["clips"].getArray())
+        {
+            for (const auto& o : *clips)
+            {
+                Clip c;
+                c.id = (Id) (juce::int64) o["id"];
+                if (c.id == 0)
+                    return "A clip has no id.";
+                c.pattern = (Id) (juce::int64) o["pattern"];
+                c.audio = (Id) (juce::int64) o["audio"];
+                if (c.isAudio())
+                {
+                    if (p.findAudioFile (c.audio) == nullptr)
+                        return "A clip refers to an audio file entry that does not exist (id " + std::to_string (c.audio) + ").";
+                    c.pattern = 0;
+                    c.audioOffset = std::max (0.0, (double) o.getProperty ("audioOffset", 0.0));
+                    c.gain = getFloat (o, "gain", 1.0f, 0.0f, 4.0f);
+                }
+                else if (p.findPattern (c.pattern) == nullptr)
+                {
+                    return "A clip refers to a pattern that does not exist (id " + std::to_string (c.pattern) + ").";
+                }
+                c.track = (int) o["track"];
+                if (c.track < 0 || c.track >= (int) p.arrangement.tracks.size())
+                    return "A clip is on a track that does not exist (track " + std::to_string (c.track) + ").";
+                c.start = std::max<std::int64_t> (0, (juce::int64) o["start"]);
+                c.length = std::max<std::int64_t> (1, (juce::int64) o["length"]);
+                c.offset = std::max<std::int64_t> (0, (juce::int64) o["offset"]);
+                highestId = std::max (highestId, c.id);
+                p.arrangement.clips.push_back (c);
+            }
+        }
+    }
+    else
+    {
+        p.nextId = highestId + 1;
+        for (int i = 0; i < 8; ++i)
+            highestId = std::max (highestId, p.addTrack().id);
+    }
+
+    // Mixer (absent before version 3: such projects get a master, everything routed to it).
+    if (const auto* mixer = root["mixer"].getArray())
+    {
+        for (const auto& o : *mixer)
+        {
+            MixerInsert m;
+            m.id = (Id) (juce::int64) o["id"];
+            if (m.id == 0)
+                return "A mixer insert has no id.";
+            if (p.findInsert (m.id) != nullptr)
+                return "Two mixer inserts share the id " + std::to_string (m.id) + ".";
+            m.name = o["name"].toString().toStdString();
+            m.colour = getInt (o, "colour", 0, 0, 1000);
+            m.volume = getFloat (o, "volume", 1.0f, 0.0f, MixerInsert::kMaxVolume);
+            m.pan = getFloat (o, "pan", 0.0f, -1.0f, 1.0f);
+            m.muted = (bool) o["muted"];
+            m.solo = (bool) o["solo"];
+            m.output = (Id) (juce::int64) o["output"];
+            if (const auto* sends = o["sends"].getArray())
+                for (const auto& so : *sends)
+                    m.sends.push_back ({ (Id) (juce::int64) so["target"], getFloat (so, "level", 0.5f, 0.0f, MixerInsert::kMaxVolume) });
+            if (const auto* effects = o["effects"].getArray())
+            {
+                for (const auto& eo : *effects)
+                {
+                    EffectSlot e;
+                    if (const auto error = effectFromVar (eo, e); ! error.empty())
+                        return "Mixer insert \"" + m.name + "\": " + error;
+                    if (e.id == 0)
+                        return "An effect on mixer insert \"" + m.name + "\" has no id.";
+                    highestId = std::max (highestId, e.id);
+                    m.effects.push_back (std::move (e));
+                }
+            }
+            highestId = std::max (highestId, m.id);
+            p.mixer.push_back (std::move (m));
+        }
+
+        // Routing is checked once every insert is known.
+        for (std::size_t i = 1; i < p.mixer.size(); ++i)
+        {
+            const auto& m = p.mixer[i];
+            if (m.output != 0 && ! p.canRoute (m.id, m.output))
+                return "Mixer insert \"" + m.name + "\" outputs to an insert that does not exist or is not to its right.";
+            for (const auto& s : m.sends)
+                if (s.target == m.id || ! p.canRoute (m.id, s.target))
+                    return "Mixer insert \"" + m.name + "\" sends to an insert that does not exist or is not to its right.";
+        }
+        if (! p.mixer.empty())
+            p.mixer.front().output = 0;
+    }
+    for (const auto& c : p.channels)
+        if (c.mixerInsert != 0 && p.findInsert (c.mixerInsert) == nullptr)
+            return "Channel \"" + c.name + "\" plays into a mixer insert that does not exist.";
+    for (const auto& t : p.arrangement.tracks)
+        if (t.mixerInsert != 0 && p.findInsert (t.mixerInsert) == nullptr)
+            return "Track \"" + t.name + "\" plays into a mixer insert that does not exist.";
+
+    // Never trust the stored counter below the ids actually in use.
+    p.nextId = std::max ((Id) (juce::int64) root["nextId"], highestId + 1);
+
+    out = std::move (p);
+    return {};
+}
+
+std::string effectChainToJson (const std::vector<EffectSlot>& effects)
+{
+    auto root = makeObject();
+    set (root, "format", "tactus-effect-chain");
+    set (root, "version", 1);
+    juce::Array<juce::var> list;
+    for (const auto& e : effects)
+        list.add (effectToVar (e));
+    set (root, "effects", list);
+    return juce::JSON::toString (root).toStdString();
+}
+
+std::string effectChainFromJson (const std::string& json, Project& idSource, std::vector<EffectSlot>& out)
+{
+    juce::var root;
+    const auto parseResult = juce::JSON::parse (juce::String::fromUTF8 (json.c_str()), root);
+    if (parseResult.failed())
+        return "Not valid JSON: " + parseResult.getErrorMessage().toStdString();
+    if (! root.isObject() || root["format"].toString() != "tactus-effect-chain")
+        return "This file is not a Tactus effect chain.";
+    if ((int) root["version"] > 1)
+        return "This effect chain was saved by a newer version of Tactus.";
+
+    std::vector<EffectSlot> effects;
+    if (const auto* list = root["effects"].getArray())
+    {
+        for (const auto& o : *list)
+        {
+            EffectSlot e;
+            if (const auto error = effectFromVar (o, e); ! error.empty())
+                return error;
+            e.id = idSource.allocateId();
+            effects.push_back (std::move (e));
+        }
+    }
+    out = std::move (effects);
+    return {};
+}
+
+std::string saveToFile (const Project& project, const std::string& path)
+{
+    const juce::File target (juce::String::fromUTF8 (path.c_str()));
+    if (! target.getParentDirectory().createDirectory())
+        return "Could not create the folder " + target.getParentDirectory().getFullPathName().toStdString();
+
+    juce::TemporaryFile temp (target);
+    if (! temp.getFile().replaceWithText (juce::String::fromUTF8 (toJson (project).c_str()), false, false, "\n"))
+        return "Could not write " + temp.getFile().getFullPathName().toStdString() + " (disk full or no permission?)";
+
+    if (! temp.overwriteTargetFileWithTemporary())
+        return "Could not replace " + path + " (is the file open elsewhere or read-only?)";
+
+    return {};
+}
+
+std::string loadFromFile (const std::string& path, Project& out)
+{
+    const juce::File file (juce::String::fromUTF8 (path.c_str()));
+    if (! file.existsAsFile())
+        return "File not found: " + path;
+
+    juce::FileInputStream stream (file);
+    if (stream.failedToOpen())
+        return "Could not open " + path + ": " + stream.getStatus().getErrorMessage().toStdString();
+
+    return fromJson (stream.readEntireStreamAsString().toStdString(), out);
+}
+
+} // namespace tactus::ProjectSerializer
